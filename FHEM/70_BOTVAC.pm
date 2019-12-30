@@ -1,4 +1,4 @@
-# $Id: 70_BOTVAC.pm 066 2018-01-24 01:00:56Z JojoK88$
+# $Id: 70_BOTVAC.pm 20276 2019-09-29 16:07:12Z vuffiraa $
 ##############################################################################
 #
 #     70_BOTVAC.pm
@@ -22,9 +22,6 @@
 #     You should have received a copy of the GNU General Public License
 #     along with fhem.  If not, see <http://www.gnu.org/licenses/>.
 #
-#
-# Version: 0.6.6
-#
 ##############################################################################
 
 package main;
@@ -35,6 +32,7 @@ use warnings;
 
 sub BOTVAC_Initialize($) {
     my ($hash) = @_;
+    our $readingFnAttributes;
 
     $hash->{DefFn}    = "BOTVAC::Define";
     $hash->{GetFn}    = "BOTVAC::Get";
@@ -47,7 +45,7 @@ sub BOTVAC_Initialize($) {
     $hash->{AttrList} = "disable:0,1 " .
                         "actionInterval " .
                         "boundaries:textField-long " .
-                         $::readingFnAttributes;
+                         $readingFnAttributes;
 }
 
 package BOTVAC;
@@ -85,6 +83,7 @@ BEGIN {
         readingsBulkUpdate
         readingsBulkUpdateIfChanged
         readingsBeginUpdate
+        readingsDelete
         readingsEndUpdate
         ReadingsNum
         ReadingsVal
@@ -128,19 +127,19 @@ sub Define($$) {
     my $interval = 85;
 
     if (defined($a[3])) {
-      if ($a[3] =~ /^(neato|vorwerk)$/) {
-        $vendor = $a[3];
+      if (lc($a[3]) =~ /^(neato|vorwerk)$/) {
+        $vendor = $1;
         $interval = $a[4] if (defined($a[4]));
       } elsif ($a[3] =~ /^[0-9]+$/ and not defined($a[4])) {
         $interval = $a[3];
       } else {
         StorePassword($hash, $a[3]);
         if (defined($a[4])) {
-          if ($a[4] =~ /^(neato|vorwerk)$/) {
-            $vendor = $a[4];
+          if (lc($a[4]) =~ /^(neato|vorwerk)$/) {
+            $vendor = $1;
             $interval = $a[5] if (defined($a[5]));
           } else {
-            $interval = $a[5];
+            $interval = $a[4];
           }
         }
       }
@@ -149,7 +148,8 @@ sub Define($$) {
     $hash->{INTERVAL} = $interval;
 
     unless ( defined( AttrVal( $name, "webCmd", undef ) ) ) {
-        $::attr{$name}{webCmd} = 'startCleaning:stop:sendToBase';
+      no warnings "once";
+      $::attr{$name}{webCmd} = 'startCleaning:stop:sendToBase';
     }
 
     # start the status update timer
@@ -167,7 +167,7 @@ sub GetStatus($;$) {
     my $name      = $hash->{NAME};
     my $interval  = $hash->{INTERVAL};
     my @successor = ();
-    
+
     Log3($name, 5, "BOTVAC $name: called function GetStatus()");
 
     # use actionInterval if state is busy or paused
@@ -176,7 +176,7 @@ sub GetStatus($;$) {
     RemoveInternalTimer($hash);
     InternalTimer( gettimeofday() + $interval, "BOTVAC::GetStatus", $hash, 0 );
 
-    return if ( AttrVal($name, "disable", 0) == 1 );
+    return if ( AttrVal($name, "disable", 0) == 1 or ReadingsVal($name,"pollingMode",1) == 0);
 
     # check device availability
     if (!$update) {
@@ -188,9 +188,14 @@ sub GetStatus($;$) {
 
       push(@successor, ["messages", "getSchedule"]);
       push(@successor, ["messages", "getGeneralInfo"]) if (GetServiceVersion($hash, "generalInfo") =~ /.*-1/);
+      push(@successor, ["messages", "getPreferences"]) if (GetServiceVersion($hash, "preferences") ne "");
 
       SendCommand($hash, "messages", "getRobotState", undef, @successor);
     }
+
+    # cleanup
+    readingsDelete($hash, "accessToken");
+    readingsDelete($hash, "secretKey");
 
     return;
 }
@@ -213,8 +218,14 @@ sub Get($@) {
         } else {
             return "no such reading: $what";
         }
+    } elsif ( $what =~ /^(statistics)$/ ) {
+      if (defined($hash->{helper}{MAPS}) and @{$hash->{helper}{MAPS}} > 0) {
+        return GetStatistics($hash);
+      } else {
+        return "maps for $what are not available yet";
+      }
     } else {
-        return "Unknown argument $what, choose one of batteryPercent:noArg";
+        return "Unknown argument $what, choose one of batteryPercent:noArg statistics:noArg";
     }
 }
 
@@ -257,8 +268,14 @@ sub Set($@) {
     $usage .= " dismissCurrentAlert:noArg" if ( ReadingsVal($name, "alert", "") ne "" );
     $usage .= " findMe:noArg"              if ( GetServiceVersion($hash, "findMe") eq "basic-1" );
     $usage .= " startManual:noArg"         if ( GetServiceVersion($hash, "manualCleaning") ne "" );
-    $usage .= " statusRequest:noArg schedule:on,off syncRobots:noArg";
-    
+    $usage .= " statusRequest:noArg schedule:on,off syncRobots:noArg pollingMode:on,off";
+
+    # preferences
+    $usage .= " robotSounds:on,off"                            if ( GetServiceVersion($hash, "preferences") !~ /(^$)|(basic-1)/ );
+    $usage .= " dirtbinAlertReminderInterval:30,60,90,120,150" if ( GetServiceVersion($hash, "preferences") =~ /(basic-\d)|(advanced-\d)/ );
+    $usage .= " filterChangeReminderInterval:1,2,3"            if ( GetServiceVersion($hash, "preferences") =~ /(basic-\d)|(advanced-\d)/ );
+    $usage .= " brushChangeReminderInterval:4,5,6,7,8"         if ( GetServiceVersion($hash, "preferences") =~ /(basic-\d)|(advanced-\d)/ );
+
     # house cleaning
     $usage .= " nextCleaningMode:eco,turbo" if ($houseCleaningSrv =~ /basic-\d/);
     $usage .= " nextCleaningNavigationMode:normal,extra#care" if ($houseCleaningSrv eq "minimal-2");
@@ -300,7 +317,7 @@ sub Set($@) {
           my $name = $Boundaries[$i]->{name};
           push @names,$name if (!(grep { $_ eq $name } @names) and ($name ne ""));
         }
-        my $BoundariesList  = @names ? join(",", @names) : "textField";
+        my $BoundariesList  = @names ? "multiple-strict,".join(",", @names) : "textField";
         $usage .= " setBoundariesOnFloorplan_0:".$BoundariesList if (ReadingsVal($name, "floorplan_0_id" ,"") ne "");
         $usage .= " setBoundariesOnFloorplan_1:".$BoundariesList if (ReadingsVal($name, "floorplan_1_id" ,"") ne "");
         $usage .= " setBoundariesOnFloorplan_2:".$BoundariesList if (ReadingsVal($name, "floorplan_2_id" ,"") ne "");
@@ -419,8 +436,12 @@ sub Set($@) {
     # statusRequest
     elsif ( $a[1] eq "statusRequest" ) {
         Log3($name, 2, "BOTVAC set $name $arg");
+        
+        my @successor = ();
+        push(@successor, ["messages", "getPreferences"]) if (GetServiceVersion($hash, "preferences") ne "");
+        push(@successor, ["messages", "getSchedule"]);
 
-        SendCommand( $hash, "messages", "getRobotState", undef, ["messages", "getSchedule"] );
+        SendCommand( $hash, "messages", "getRobotState", undef, @successor );
     }
 
     # setRobot
@@ -440,7 +461,7 @@ sub Set($@) {
           Log3($name, 2, "BOTVAC Can't set robot, run 'syncRobots' before");
         }
     }
-    
+
     # reloadMaps
     elsif ( $a[1] eq "reloadMaps" ) {
         Log3($name, 2, "BOTVAC set $name $arg");
@@ -488,7 +509,7 @@ sub Set($@) {
 
         readingsSingleUpdate($hash, $a[1], $a[2], 0);
     }
-    
+
     # wsCommand || wsCommand
     elsif ( $a[1] =~ /wsCombo|wsCommand/) {
         Log3($name, 2, "BOTVAC set $name $arg");
@@ -498,7 +519,7 @@ sub Set($@) {
         my $cmd = ($a[1] eq "wsCombo" ? "combo" : "command");
         wsEncode($hash, "{ \"$cmd\": \"$a[2]\" }");
     }
-    
+
     # password
     elsif ( $a[1] eq "password") {
         Log3($name, 2, "BOTVAC set $name " . $a[1]);
@@ -506,6 +527,42 @@ sub Set($@) {
         return "No password given" if ( !defined( $a[2] ) );
 
         StorePassword( $hash, $a[2] );
+    }
+
+    # pollingMode
+    elsif ( $a[1] eq "pollingMode") {
+        Log3($name, 4, "BOTVAC set $name $arg");
+
+        return "No argument given" if ( !defined( $a[2] ) );
+
+        readingsSingleUpdate($hash, "pollingMode", ($a[2] eq "off" ? "0" : "1"), 0);
+    }
+
+    # preferences
+    elsif ( $a[1] =~ /^(robotSounds|dirtbinAlertReminderInterval|filterChangeReminderInterval|brushChangeReminderInterval)$/) {
+        my $item = $1;
+        my %params;
+
+        Log3($name, 4, "BOTVAC set $name $arg");
+
+        return "No argument given" if ( !defined( $a[2] ) );
+
+        foreach my $reading ( keys %{ $hash->{READINGS} } ) {
+            if ($reading =~ /^pref_(.*)/) {
+                my $prefName = $1;
+                $params{$prefName} = ReadingsVal($name, $reading, "null");
+                $params{$prefName} *= 43200 if ($prefName =~ /ChangeReminderInterval/ and $params{$prefName} =~ /^\d*$/);
+                $params{$prefName} = SetBoolean($params{$prefName}) if ($prefName eq "robotSounds");
+            }
+        }
+
+        return "No preferences present, execute 'set statusRequest' first." unless (keys %params);
+
+        $params{$item} = $a[2];
+        $params{$item} *= 43200 if ($item =~ /ChangeReminderInterval/ && $params{$item} =~ /^\d*$/);
+        $params{$item} = SetBoolean($params{$item}) if ($item eq "robotSounds");
+
+        SendCommand( $hash, "messages", "setPreferences", \%params );
     }
 
     # return usage hint
@@ -555,7 +612,7 @@ sub Attr(@)
       if ($attr_value !~ /^\{.*\}/){
         $err = "Invalid value $attr_value for attribute $attr_name. Must be a space separated list of JSON strings.";
       } else {
-        my @boundaries = split " ",$attr_value;
+        my @boundaries = split(/\s/, $attr_value);
         my @areas;
         if (@boundaries > 1) {
           foreach my $area (@boundaries) {
@@ -617,7 +674,7 @@ sub SendCommand($$;$$@) {
     my $URL = "https://";
     my $response;
     my $return;
-    
+
     my %sslArgs;
 
     if ($service ne "sessions" && $service ne "dashboard") {
@@ -631,20 +688,16 @@ sub SendCommand($$;$$@) {
         Log3($name, 4, "BOTVAC $name: REQ $service/$cmd");
     }
     Log3($name, 4, "BOTVAC $name: REQ option $option") if (defined($option));
-    my $msg = "BOTVAC $name: REQ successors";
-    my @succ_item;
-    for (my $i = 0; $i < @successor; $i++) {
-      @succ_item = @{$successor[$i]};
-      $msg .= " $i: ";
-      $msg .= join(",", map { defined($_) ? $_ : '' } @succ_item);
-    }
-    Log3($name, 4, $msg);
+    LogSuccessors($hash, @successor);
 
     $header = "Accept: application/vnd.neato.nucleo.v1";
     $header .= "\r\nContent-Type: application/json";
 
     if ($service eq "sessions") {
-      return if (!defined($password));
+      if (!defined($password)) {
+        readingsSingleUpdate($hash, "state", "Password missing (see instructions)",1);
+        return;
+      }
       my $token = createUniqueId() . createUniqueId();
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/sessions";
@@ -652,7 +705,7 @@ sub SendCommand($$;$$@) {
       %sslArgs = ( SSL_verify_mode => 0 );
 
     } elsif ($service eq "dashboard") {
-      $header .= "\r\nAuthorization: Token token=".ReadingsVal($name, "accessToken", "");
+      $header .= "\r\nAuthorization: Token token=".ReadingsVal($name, ".accessToken", "");
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/dashboard";
       %sslArgs = ( SSL_verify_mode => 0 );
@@ -661,7 +714,7 @@ sub SendCommand($$;$$@) {
       my $serial = ReadingsVal($name, "serial", "");
       return if ($serial eq "");
 
-      $header .= "\r\nAuthorization: Token token=".ReadingsVal($name, "accessToken", "");
+      $header .= "\r\nAuthorization: Token token=".ReadingsVal($name, ".accessToken", "");
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/users/me/robots/$serial/";
       $URL .= (defined($cmd) ? $cmd : "maps");
@@ -692,7 +745,7 @@ sub SendCommand($$;$$@) {
           $data .= "\"category\":2";
           $data .= ",\"mode\":";
           $data .= (GetCleaningParameter($hash, "cleaningMode", "eco") eq "eco" ? "1" : "2");
-          $data .= ",\"modifier\":1"; 
+          $data .= ",\"modifier\":1";
         } elsif ($version eq "minimal-2") {
           $data .= "\"category\":2";
           $data .= ",\"navigationMode\":";
@@ -716,7 +769,7 @@ sub SendCommand($$;$$@) {
             my $zone = GetCleaningParameter($hash, "cleaningZone", "");
             $data .= ",\"boundaryId\":\"".$zone."\"" if ($zone ne "");
           }
-        }          
+        }
         $data .= "}";
       }
       elsif ($cmd eq "startSpot") {
@@ -729,7 +782,7 @@ sub SendCommand($$;$$@) {
           $data .= (GetCleaningParameter($hash, "cleaningMode", "eco") eq "eco" ? "1" : "2");
         }
         if ($version eq "basic-1" or $version eq "minimal-2") {
-          $data .= ",\"modifier\":"; 
+          $data .= ",\"modifier\":";
           $data .= (GetCleaningParameter($hash, "cleaningModifier", "normal") eq "normal" ? "1" : "2");
         }
         if ($version eq "micro-2" or $version eq "minimal-2") {
@@ -737,14 +790,14 @@ sub SendCommand($$;$$@) {
           $data .= (GetCleaningParameter($hash, "cleaningNavigationMode", "normal") eq "normal" ? "1" : "2");
         }
         if ($version eq "basic-1" or $version eq "basic-3") {
-          $data .= ",\"spotWidth\":"; 
+          $data .= ",\"spotWidth\":";
           $data .= GetCleaningParameter($hash, "cleaningSpotWidth", "200");
-          $data .= ",\"spotHeight\":"; 
+          $data .= ",\"spotHeight\":";
           $data .= GetCleaningParameter($hash, "cleaningSpotHeight", "200");
-        }          
+        }
         $data .= "}";
       }
-      elsif ($cmd eq "setMapBoundaries" or $cmd eq "getMapBoundaries") {   
+      elsif ($cmd eq "setMapBoundaries" or $cmd eq "getMapBoundaries" or $cmd eq "setPreferences") {
         if (defined($option) and ref($option) eq "HASH") {
           $data .= ",\"params\":{";
           foreach( keys %$option ) {
@@ -754,13 +807,12 @@ sub SendCommand($$;$$@) {
           $data .= "}";
         }
       }
-      
       $data .= "}";
 
       my $now = time();
       my $date = FmtDateTimeRFC1123($now);
       my $message = join("\n", (lc($serial), $date, $data));
-      my $hmac = hmac_sha256_hex($message, ReadingsVal($name, "secretKey", ""));
+      my $hmac = hmac_sha256_hex($message, ReadingsVal($name, ".secretKey", ""));
 
       $header .= "\r\nDate: $date";
       $header .= "\r\nAuthorization: NEATOAPP $hmac";
@@ -809,7 +861,7 @@ sub ReceiveCommand($$$) {
     my @successor = @{$param->{successor}};
 
     my $rc = ( $param->{buf} ) ? $param->{buf} : $param;
-    
+
     my $loadMap;
     my $return;
     my $reqId = 0;
@@ -829,24 +881,22 @@ sub ReceiveCommand($$$) {
 
         # keep last state
         #readingsBulkUpdateIfChanged( $hash, "state", "Error" );
+
+        # stop pulling for current interval
+        Log3($name, 4, "BOTVAC $name: drop successors");
+        LogSuccessors($hash, @successor);
+        return;
     }
 
     # data received
     elsif ($data) {
-      
+
         if ( !defined($cmd) ) {
             Log3($name, 4, "BOTVAC $name: RCV $service");
         } else {
             Log3($name, 4, "BOTVAC $name: RCV $service/$cmd");
         }
-        my $msg = "BOTVAC $name: RCV successors";
-        my @succ_item;
-        for (my $i = 0; $i < @successor; $i++) {
-          @succ_item = @{$successor[$i]};
-          $msg .= " $i: ";
-          $msg .= join(",", map { defined($_) ? $_ : '' } @succ_item);
-        }
-        Log3($name, 4, $msg);
+        LogSuccessors($hash, @successor);
 
         if ( $data ne "" ) {
             if ( $service eq "loadmap" ) {
@@ -880,7 +930,7 @@ sub ReceiveCommand($$$) {
             # getSchedule, enableSchedule, disableSchedule
             if ( ref($return->{data}) eq "HASH" ) {
               my $scheduleData = $return->{data};
-              readingsBulkUpdateIfChanged($hash, "scheduleEnabled", $scheduleData->{enabled});
+              readingsBulkUpdateIfChanged($hash, "scheduleEnabled", GetBoolean($scheduleData->{enabled}));
               readingsBulkUpdateIfChanged($hash, "scheduleType",    $scheduleData->{type})
                   if (defined($scheduleData->{type}));
 
@@ -952,13 +1002,13 @@ sub ReceiveCommand($$$) {
                   }
                 }
               }
-              
+
               #remove outdated calendar information
               foreach ( keys %currentEvents ) {
                 delete( $hash->{READINGS}{$_} );
               }
             }
-          } 
+          }
           elsif ( $cmd eq "getMapBoundaries" ) {
               if ( ref($return->{data}) eq "HASH" ) {
                 $reqId = $return->{reqId};
@@ -971,7 +1021,7 @@ sub ReceiveCommand($$$) {
                   for (my $i = 0; $i < @boundaries; $i++) {
                     my $currentBoundary = "{";
                     $currentBoundary .= "\"id\":\"".$boundaries[$i]->{id}."\"," if ($boundaries[$i]->{type} eq "polygon");
-					$currentBoundary .= "\"type\":\"".$boundaries[$i]->{type}."\",";
+                    $currentBoundary .= "\"type\":\"".$boundaries[$i]->{type}."\",";
                     if (ref($boundaries[$i]->{vertices}) eq "ARRAY") {
                       my @vertices = @{$boundaries[$i]->{vertices}};
                       $currentBoundary .= "\"vertices\":[";
@@ -981,8 +1031,8 @@ sub ReceiveCommand($$$) {
                           $currentBoundary .= "[".$xy[0].",".$xy[1]."],";
                         }
                       }
-                    $tmp = chop($currentBoundary);  #remove last ","
-                    $currentBoundary .= "],";
+                      $tmp = chop($currentBoundary);  #remove last ","
+                      $currentBoundary .= "],";
                     }
                     $currentBoundary .= "\"name\":\"".$boundaries[$i]->{name}."\",";
                     $currentBoundary .= "\"color\":\"".$boundaries[$i]->{color}."\",";
@@ -990,28 +1040,30 @@ sub ReceiveCommand($$$) {
                     $currentBoundary .= "\"enabled\":".$tmp.",";
                     $tmp = chop($currentBoundary);  #remove last ","
                     $currentBoundary .= "},\n";
-					if ($boundaries[$i]->{type} eq "polygon") {
-					  $zonesList .= $currentBoundary;
-					} else {
-					  $boundariesList .= $currentBoundary;
-					}
+                    if ($boundaries[$i]->{type} eq "polygon") {
+                      $zonesList .= $currentBoundary;
+                    } else {
+                      $boundariesList .= $currentBoundary;
+                    }
                   }
                   $tmp = chomp($boundariesList);  #remove last "\n"
-				  $tmp = chomp($zonesList);  #remove last "\n"
-				  $tmp = chop($boundariesList);  #remove last ","
-				  $tmp = chop($zonesList);  #remove last ","
+                  $tmp = chomp($zonesList);  #remove last "\n"
+                  $tmp = chop($boundariesList);  #remove last ","
+                  $tmp = chop($zonesList);  #remove last ","
                   readingsBulkUpdateIfChanged($hash, "floorplan_".$reqId."_boundaries", $boundariesList);
-				  readingsBulkUpdateIfChanged($hash, "floorplan_".$reqId."_zones", $zonesList);
+                  readingsBulkUpdateIfChanged($hash, "floorplan_".$reqId."_zones", $zonesList);
                 }
               }
-          } 
+          }
           elsif ( $cmd eq "getGeneralInfo" ) {
             if ( ref($return->{data}) eq "HASH" ) {
               my $generalInfo = $return->{data};
               if ( ref($generalInfo->{battery}) eq "HASH" ) {
                 my $batteryInfo = $generalInfo->{battery};
-                readingsBulkUpdateIfChanged($hash, "batteryTimeToEmpty",         $batteryInfo->{timeToEmpty});
-                readingsBulkUpdateIfChanged($hash, "batteryTimeToFullCharge",    $batteryInfo->{timeToFullCharge});
+                readingsBulkUpdateIfChanged($hash, "batteryTimeToEmpty",         $batteryInfo->{timeToEmpty})
+                    if (defined($batteryInfo->{timeToEmpty}));
+                readingsBulkUpdateIfChanged($hash, "batteryTimeToFullCharge",    $batteryInfo->{timeToFullCharge})
+                    if (defined($batteryInfo->{timeToFullCharge}));
                 readingsBulkUpdateIfChanged($hash, "batteryTotalCharges",        $batteryInfo->{totalCharges});
                 readingsBulkUpdateIfChanged($hash, "batteryManufacturingDate",   $batteryInfo->{manufacturingDate});
                 readingsBulkUpdateIfChanged($hash, "batteryAuthorizationStatus", GetAuthStatusText($batteryInfo->{authorizationStatus}));
@@ -1021,14 +1073,14 @@ sub ReceiveCommand($$$) {
           }
           else {
             # getRobotState, startCleaning, pauseCleaning, stopCleaning, resumeCleaning,
-            # sendToBase, setMapBoundaries, getRobotManualCleaningInfo
+            # sendToBase, setMapBoundaries, getRobotManualCleaningInfo, getPreferences
             if ( ref($return) eq "HASH" ) {
               push(@successor , ["robots", "maps"])
-                  if ($cmd eq "setMapBoundaries" or 
+                  if ($cmd eq "setMapBoundaries" or
                       (defined($return->{state}) and
                        ($return->{state} == 1 or $return->{state} == 4) and   # Idle or Error
                        $return->{state} != ReadingsNum($name, "stateId", $return->{state})));
-              
+
               #readingsBulkUpdateIfChanged($hash, "version", $return->{version});
               #readingsBulkUpdateIfChanged($hash, "data", $return->{data});
               readingsBulkUpdateIfChanged($hash, "result", $return->{result}) if (defined($return->{result}));
@@ -1047,6 +1099,19 @@ sub ReceiveCommand($$$) {
                   readingsBulkUpdateIfChanged($hash, "wlanValidity",  "unavailable");
                 }
               }
+              if ($cmd eq "getPreferences") {
+                if ( ref($return->{data}) eq "HASH") {
+                  my $data = $return->{data};
+                  foreach my $key (keys %{$return->{data}}) {
+                    my $value = $data->{$key};
+                    $value /= 43200
+                        if ($key =~ /ChangeReminderInterval/ and $value =~ /^[1-9]\d*$/);
+                    $value = GetBoolean($value)
+                        if ($key =~ /(robotSounds)|(dirtbinAlert)|(allAlerts)|(leds)|(buttonClicks)|(clock24h)/);
+                    readingsBulkUpdateIfChanged($hash, "pref_$key", $value);
+                  }
+                }
+              }
               if ( ref($return->{cleaning}) eq "HASH" ) {
                 my $cleaning = $return->{cleaning};
                 readingsBulkUpdateIfChanged($hash, "cleaningCategory",       GetCategoryText($cleaning->{category}));
@@ -1059,19 +1124,19 @@ sub ReceiveCommand($$$) {
               }
               if ( ref($return->{details}) eq "HASH" ) {
                 my $details = $return->{details};
-                readingsBulkUpdateIfChanged($hash, "isCharging",        $details->{isCharging});
-                readingsBulkUpdateIfChanged($hash, "isDocked",          $details->{isDocked});
-                readingsBulkUpdateIfChanged($hash, "isScheduleEnabled", $details->{isScheduleEnabled});
-                readingsBulkUpdateIfChanged($hash, "dockHasBeenSeen",   $details->{dockHasBeenSeen});
-                readingsBulkUpdateIfChanged($hash, "batteryPercent",    $details->{charge});
+                readingsBulkUpdateIfChanged($hash, "isCharging",      GetBoolean($details->{isCharging}));
+                readingsBulkUpdateIfChanged($hash, "isDocked",        GetBoolean($details->{isDocked}));
+                readingsBulkUpdateIfChanged($hash, "scheduleEnabled", GetBoolean($details->{isScheduleEnabled}));
+                readingsBulkUpdateIfChanged($hash, "dockHasBeenSeen", GetBoolean($details->{dockHasBeenSeen}));
+                readingsBulkUpdateIfChanged($hash, "batteryPercent",  $details->{charge});
               }
               if ( ref($return->{availableCommands}) eq "HASH" ) {
                 my $availableCommands = $return->{availableCommands};
-                readingsBulkUpdateIfChanged($hash, ".start",    $availableCommands->{start});
-                readingsBulkUpdateIfChanged($hash, ".pause",    $availableCommands->{pause});
-                readingsBulkUpdateIfChanged($hash, ".resume",   $availableCommands->{resume});
-                readingsBulkUpdateIfChanged($hash, ".goToBase", $availableCommands->{goToBase});
-                readingsBulkUpdateIfChanged($hash, ".stop",     $availableCommands->{stop})
+                readingsBulkUpdateIfChanged($hash, ".start",    GetBoolean($availableCommands->{start}));
+                readingsBulkUpdateIfChanged($hash, ".pause",    GetBoolean($availableCommands->{pause}));
+                readingsBulkUpdateIfChanged($hash, ".resume",   GetBoolean($availableCommands->{resume}));
+                readingsBulkUpdateIfChanged($hash, ".goToBase", GetBoolean($availableCommands->{goToBase}));
+                readingsBulkUpdateIfChanged($hash, ".stop",     GetBoolean($availableCommands->{stop}))
                     unless ($cmd =~ /start.*/ or $cmd eq "getRobotManualCleaningInfo");
               }
               if ( ref($return->{availableServices}) eq "HASH" ) {
@@ -1097,14 +1162,14 @@ sub ReceiveCommand($$$) {
             }
           }
         }
-    
+
         # Sessions
         elsif ( $service eq "sessions" ) {
           if ( ref($return) eq "HASH" and defined($return->{access_token})) {
-            readingsBulkUpdateIfChanged($hash, "accessToken", $return->{access_token});
+            readingsBulkUpdateIfChanged($hash, ".accessToken", $return->{access_token});
           }
         }
-        
+
         # dashboard
         elsif ( $service eq "dashboard" ) {
           if ( ref($return) eq "HASH" ) {
@@ -1126,10 +1191,15 @@ sub ReceiveCommand($$$) {
                 push(@robotList, $r);
               }
               $hash->{helper}{ROBOTS} = \@robotList;
-
-              SetRobot($hash, ReadingsNum($name, "robot", 0));
-              
-              push(@successor , ["robots", "maps"]);
+              if (@robotList) {
+                SetRobot($hash, ReadingsNum($name, "robot", 0));
+                push(@successor , ["robots", "maps"]);
+              } else {
+                Log3($name, 3, "BOTVAC $name: no robots found");
+                Log3($name, 4, "BOTVAC $name: drop successors");
+                LogSuccessors($hash, @successor);
+                @successor = ();
+              }
             }
           }
         }
@@ -1140,14 +1210,28 @@ sub ReceiveCommand($$$) {
             if ( ref($return) eq "HASH" ) {
               if ( ref($return->{maps} ) eq "ARRAY" ) {
                 my @maps = @{$return->{maps}};
+                $hash->{helper}{MAPS} = $return->{maps};
                 if (@maps) {
                   # take first - newest
                   my $map = $maps[0];
-                  readingsBulkUpdateIfChanged($hash, "map_status", $map->{status});
-                  readingsBulkUpdateIfChanged($hash, "map_id",     $map->{id});
+                  foreach my $key (keys %$map) {
+                    readingsBulkUpdateIfChanged($hash, "map_".$key, defined($map->{$key})?$map->{$key}:"")
+                        if ($key !~ "url|url_valid_for_seconds|generated_at|start_at|end_at");
+                  }
                   readingsBulkUpdateIfChanged($hash, "map_date",   GetTimeFromString($map->{generated_at}));
-                  readingsBulkUpdateIfChanged($hash, "map_area",   $map->{cleaned_area});
                   readingsBulkUpdateIfChanged($hash, ".map_url",   $map->{url});
+                  my $t1 = GetSecondsFromString($map->{end_at});
+                  my $t2 = GetSecondsFromString($map->{start_at});
+                  my $dt = $t1-$t2-$map->{time_in_suspended_cleaning}-$map->{time_in_error}-$map->{time_in_pause};
+                  my $dc = $map->{run_charge_at_start}-$map->{run_charge_at_end};
+                  my $expa = int($map->{cleaned_area}*100/$dc+.5) if ($dc > 0);
+                  my $expt = int($dt*100/$dc/60+.5) if ($dc > 0);
+                  readingsBulkUpdateIfChanged($hash, "map_duration", int($dt/6+.5)/10); # min
+                  readingsBulkUpdateIfChanged($hash, "map_expected_area", $expa>0?$expa:0); # qm
+                  readingsBulkUpdateIfChanged($hash, "map_run_discharge", $dc>0?$dc:0); # %
+                  readingsBulkUpdateIfChanged($hash, "map_expected_time", $expt>0?$expt:0); # min
+                  readingsBulkUpdateIfChanged($hash, "map_area_per_time", ($expt>0 and $expa>0)?(int($expa*10/$expt+.5)/10):0); # qm/min
+                  readingsBulkUpdateIfChanged($hash, "map_discharge_per_time", ($dt>0 and $dc>0)?(int($dc*600/$dt+.5)/10):0); # %/min
                   $loadMap = 1;
                   # getPersistentMaps
                   push(@successor , ["robots", "persistent_maps"]);
@@ -1174,7 +1258,7 @@ sub ReceiveCommand($$$) {
             }
           }
         }
-        
+
         # loadmap
         elsif ( $service eq "loadmap" ) {
           readingsBulkUpdate($hash, ".map_cache", $data)
@@ -1188,12 +1272,12 @@ sub ReceiveCommand($$$) {
     }
 
     readingsEndUpdate( $hash, 1 );
-    
+
     if ($loadMap) {
       my $url = ReadingsVal($name, ".map_url", "");
       push(@successor , ["loadmap", $url]) if ($url ne "");
     }
-    
+
     if (@successor) {
       my @nextCmd = @{shift(@successor)};
       my $cmdLength = @nextCmd;
@@ -1231,6 +1315,18 @@ sub GetTimeFromString($) {
   }
 }
 
+sub GetSecondsFromString($) {
+  my ($timeStr) = @_;
+
+  eval {
+    use Time::Local;
+    if(defined($timeStr) and $timeStr =~ m/^(\d{4})-(\d{2})-(\d{2})T([0-2]\d):([0-5]\d):([0-5]\d)Z$/) {
+        my $time = timelocal($6, $5, $4, $3, $2 - 1, $1 - 1900);
+        return $time;
+    }
+  }
+}
+
 sub SetRobot($$) {
     my ( $hash, $robot ) = @_;
     my $name = $hash->{NAME};
@@ -1238,15 +1334,15 @@ sub SetRobot($$) {
     Log3($name, 4, "BOTVAC $name: set active robot $robot");
 
     my @robots = @{$hash->{helper}{ROBOTS}};
-    readingsBulkUpdateIfChanged($hash, "serial",    $robots[$robot]->{serial});
-    readingsBulkUpdateIfChanged($hash, "name",      $robots[$robot]->{name});
-    readingsBulkUpdateIfChanged($hash, "model",     $robots[$robot]->{model});
+    readingsBulkUpdateIfChanged($hash, "serial",         $robots[$robot]->{serial});
+    readingsBulkUpdateIfChanged($hash, "name",           $robots[$robot]->{name});
+    readingsBulkUpdateIfChanged($hash, "model",          $robots[$robot]->{model});
     readingsBulkUpdateIfChanged($hash, "firmwareLatest", $robots[$robot]->{recentFirmware})
         if (defined($robots[$robot]->{recentFirmware}));
-    readingsBulkUpdateIfChanged($hash, "secretKey", $robots[$robot]->{secretKey});
-    readingsBulkUpdateIfChanged($hash, "macAddr",   $robots[$robot]->{macAddr});
-    readingsBulkUpdateIfChanged($hash, "nucleoUrl", $robots[$robot]->{nucleoUrl});
-    readingsBulkUpdateIfChanged($hash, "robot",     $robot);
+    readingsBulkUpdateIfChanged($hash, ".secretKey",     $robots[$robot]->{secretKey});
+    readingsBulkUpdateIfChanged($hash, "macAddr",        $robots[$robot]->{macAddr});
+    readingsBulkUpdateIfChanged($hash, "nucleoUrl",      $robots[$robot]->{nucleoUrl});
+    readingsBulkUpdateIfChanged($hash, "robot",          $robot);
 }
 
 sub GetCleaningParameter($$$) {
@@ -1271,7 +1367,7 @@ sub GetServiceVersion($$) {
 sub SetServices {
   my ($hash, $services) = @_;
   my $name = $hash->{NAME};
-  my $serviceList = join(", ", map { "$_:$services->{$_}" } keys %$services);;
+  my $serviceList = join(", ", map { "$_:$services->{$_}" } keys %$services);
 
   $hash->{SERVICES} = $serviceList if (!defined($hash->{SERVICES}) or $hash->{SERVICES} ne $serviceList);
 }
@@ -1286,13 +1382,13 @@ sub StorePassword($$) {
       $key = Digest::MD5::md5_hex(unpack "H*", $key);
       $key .= Digest::MD5::md5_hex($key);
     }
-    
+
     for my $char (split //, $password) {
       my $encode=chop($key);
       $enc_pwd.=sprintf("%.2x",ord($char)^ord($encode));
       $key=$encode.$key;
     }
-    
+
     my $err = setKeyValue($index, $enc_pwd);
     return "error while saving the password - $err" if(defined($err));
 
@@ -1305,16 +1401,16 @@ sub ReadPassword($) {
     my $index = $hash->{TYPE}."_".$hash->{NAME}."_passwd";
     my $key = getUniqueId().$index;
     my ($password, $err);
-    
+
     Log3($name, 4, "BOTVAC $name: Read password from file");
-    
+
     ($err, $password) = getKeyValue($index);
 
     if ( defined($err) ) {
       Log3($name, 3, "BOTVAC $name: unable to read password from file: $err");
-      return undef; 
+      return undef;
     }
-    
+
     if ( defined($password) ) {
       if ( eval "use Digest::MD5;1" ) {
         $key = Digest::MD5::md5_hex(unpack "H*", $key);
@@ -1337,26 +1433,58 @@ sub CheckRegistration($$$$$) {
   my ( $hash, $service, $cmd, $option, @successor ) = @_;
   my $name = $hash->{NAME};
 
-  if (ReadingsVal($name, "secretKey", "") eq "") {
+  if (ReadingsVal($name, ".secretKey", "") eq "") {
     my @nextCmd = ($service, $cmd, $option);
     unshift(@successor, [$service, $cmd, $option]);
-      
-      my @succ_item;
-      my $msg = " successor:";
-      for (my $i = 0; $i < @successor; $i++) {
-        @succ_item = @{$successor[$i]};
-        $msg .= " $i: ";
-        $msg .= join(",", map { defined($_) ? $_ : '' } @succ_item);
-      }
-      Log3($name, 4, "BOTVAC created".$msg);
-      
-    SendCommand($hash, "sessions", undef, undef, @successor)   if (ReadingsVal($name, "accessToken", "") eq "");
-    SendCommand($hash, "dashboard", undef, undef, @successor)  if (ReadingsVal($name, "accessToken", "") ne "");
-    
+
+    my @succ_item;
+    my $msg = " successor:";
+    for (my $i = 0; $i < @successor; $i++) {
+      @succ_item = @{$successor[$i]};
+      $msg .= " $i: ";
+      $msg .= join(",", map { defined($_) ? $_ : '' } @succ_item);
+    }
+    Log3($name, 4, "BOTVAC created".$msg);
+
+    SendCommand($hash, "sessions", undef, undef, @successor)   if (ReadingsVal($name, ".accessToken", "") eq "");
+    SendCommand($hash, "dashboard", undef, undef, @successor)  if (ReadingsVal($name, ".accessToken", "") ne "");
+
     return 1;
   }
-  
+
   return;
+}
+
+sub GetBoolean($) {
+    my ($value) = @_;
+    my $booleans = {
+        '0'       => "0",
+        'false'   => "0",
+        '1'       => "1",
+        'true'    => "1"
+    };
+
+    if (defined( $booleans->{$value})) {
+        return $booleans->{$value};
+    } else {
+        return $value;
+    }
+}
+
+sub SetBoolean($) {
+    my ($value) = @_;
+    my $booleans = {
+        '0'       => "false",
+        'off'     => "false",
+        '1'       => "true",
+        'on'      => "true"
+    };
+
+    if (defined( $booleans->{$value})) {
+        return $booleans->{$value};
+    } else {
+        return $value;
+    }
 }
 
 sub BuildState($$$$) {
@@ -1560,6 +1688,20 @@ sub GetValidityEnd($) {
     return ($validFor =~ /\d+/ ? FmtDateTime(time() + $validFor) : $validFor);
 }
 
+sub LogSuccessors($@) {
+    my ($hash,@successor) = @_;
+    my $name = $hash->{NAME};
+
+    my $msg = "BOTVAC $name: successors";
+    my @succ_item;
+    for (my $i = 0; $i < @successor; $i++) {
+      @succ_item = @{$successor[$i]};
+      $msg .= " $i: ";
+      $msg .= join(",", map { defined($_) ? $_ : '' } @succ_item);
+    }
+    Log3($name, 4, $msg)  if (@successor > 0);
+}
+
 sub ShowMap($;$$) {
     my ($name,$width,$height) = @_;
 
@@ -1567,23 +1709,131 @@ sub ShowMap($;$$) {
     $img   .= ' width="'.$width.'"'  if (defined($width));
     $img   .= ' width="'.$height.'"' if (defined($height));
     $img   .= ' alt="Map currently not available">';
-    
+
     return $img;
 }
 
 sub GetMap() {
     my ($request) = @_;
-    
+
     if ($request =~ /^\/BOTVAC\/(\w+)\/map/) {
       my $name   = $1;
       my $width  = $3;
       my $height = $5;
-      
+
       return ("image/png", ReadingsVal($name, ".map_cache", ""));
     }
 
     return ("text/plain; charset=utf-8", "No BOTVAC device for webhook $request");
+
+}
+
+sub ShowStatistics($) {
+    my ($name) = @_;
+    my $hash  = $::defs{$name};
     
+    return "maps for statistics are not available yet"
+        if (!defined($hash->{helper}{MAPS}) or @{$hash->{helper}{MAPS}} == 0);
+
+    return GetStatistics($hash);
+}
+
+sub GetStatistics($) {
+    my($hash) = @_;
+    my $name = $hash->{NAME};
+    my $mapcount = @{$hash->{helper}{MAPS}};
+    my $model = ReadingsVal($name, "model", "");
+    my $ret = "";
+
+    $ret .= '<html>';
+    $ret .= '<table class="block wide">';
+    $ret .= '<caption><b>Report: '.ReadingsVal($name,"name","name").', '.InternalVal($name,"VENDOR","VENDOR").', '.ReadingsVal($name,"model","model").'</b></caption>';
+    $ret .= '<tbody>';
+    $ret .= '<tr class="col_header">';
+    $ret .= ' <td>Map</td><td></td>';
+    $ret .= ' <td colspan="3">Expected</td><td></td>';
+    $ret .= ' <td>Map</td><td></td>';
+    $ret .= ' <td>Map</td><td></td>';
+    $ret .= ' <td>Charge</td><td></td>';
+    $ret .= ' <td>Discharge</td><td></td>';
+    $ret .= ' <td>Area</td><td></td>';
+    $ret .= ' <td colspan="5">Cleaning</td><td></td>';
+    $ret .= ' <td>Charge</td><td></td>';
+    $ret .= ' <td>Status</td><td></td>';
+    $ret .= ' <td>Date</td><td></td>';
+    $ret .= ' <td>Time</td>';
+    $ret .= '</tr><tr class="col_header">';
+    $ret .= ' <td>No.</td><td></td>';
+    $ret .= ' <td>Area</td><td></td>';
+    $ret .= ' <td>Time</td><td></td>';
+    $ret .= ' <td>Area</td><td></td>';
+    $ret .= ' <td>Time</td><td></td>';
+    $ret .= ' <td>Delta</td><td></td>';
+    $ret .= ' <td>Speed</td><td></td>';
+    $ret .= ' <td>Speed</td><td></td>';
+    $ret .= ' <td>Cat.</td><td></td>';
+    $ret .= ' <td>Mode</td><td></td>';
+    $ret .= ' <td>Freq.</td><td></td>';
+    $ret .= ' <td>During</td><td></td>';
+    $ret .= ' <td></td><td></td><td></td><td></td><td></td>';
+    $ret .= '</tr><tr class="col_header">';
+    $ret .= ' <td></td><td></td>';
+    $ret .= ' <td>qm</td><td></td>';
+    $ret .= ' <td>min</td><td></td>';
+    $ret .= ' <td>qm</td><td></td>';
+    $ret .= ' <td>min</td><td></td>';
+    $ret .= ' <td>%</td><td></td>';
+    $ret .= ' <td>%/min</td><td></td>';
+    $ret .= ' <td>qm/min</td><td></td>';
+    $ret .= ' <td></td><td></td><td></td><td></td><td></td><td></td>';
+    $ret .= ' <td>Run</td><td></td>';
+    $ret .= ' <td></td><td></td>';
+    $ret .= ' <td>YYYY-MM-DD</td><td></td>';
+    $ret .= ' <td>hh:mm:ss</td>';
+    $ret .= '</tr>';
+    for (my $i=0;$i<$mapcount;$i++) {
+      my $map = \$hash->{helper}{MAPS}[$i];
+      my $t1 = GetSecondsFromString($$map->{end_at});
+      my $t2 = GetSecondsFromString($$map->{start_at});
+      my $dt = $t1-$t2-$$map->{time_in_suspended_cleaning}-$$map->{time_in_error}-$$map->{time_in_pause};
+      my $dc = $$map->{run_charge_at_start}-$$map->{run_charge_at_end};
+      my $expa = ($dc > 0 ? int($$map->{cleaned_area}*100/$dc+.5) : 0);
+      my $expt = ($dc > 0 ? int($dt*100/$dc/60+.5) : 0);
+      my($gen_date,$gen_time) = split(" ", GetTimeFromString($$map->{generated_at}));
+      $ret .= '<tr class="'.($i%2?"even":"odd").'">';
+      $ret .= ' <td>'.($i+1).'</td><td> </td>'; # Map No.
+      $ret .= ' <td>'.($expa>0?$expa:0).'</td><td> </td>'; # Expected Area
+      $ret .= ' <td>'.($expt>0?$expt:0).'</td><td> </td>'; # Expected Time
+      $ret .= ' <td>'.int($$map->{cleaned_area}+.5).'</td><td> </td>'; # Map Area
+      $ret .= ' <td>'.(($dt>0)?(int($dt/60+.5)):0).'</td><td> </td>'; # Map Time
+      $ret .= ' <td>'.($dc>0?$dc:0).'</td><td> </td>'; # Charge Delta
+      $ret .= ' <td>'.(($dt>0 and $dc>0)?(int($dc*600/$dt+.5)/10):0).'</td><td> </td>'; # Discharge Speed
+      $ret .= ' <td>'.(($expt>0 and $expa>0)?(int($expa*10/$expt+.5))/10:0).'</td><td> </td>'; # Area Speed
+      $ret .= ' <td>'.GetCategoryText($$map->{category}).'</td><td> </td>'; # Cleaning Category
+      $ret .= ' <td>'.GetModeText($$map->{mode}).'</td><td> </td>'; # Cleaning Mode
+      $ret .= ' <td>'.GetModifierText($$map->{modifier}).'</td><td> </td>'; # Cleaning Frequency
+      $ret .= ' <td>'.$$map->{suspended_cleaning_charging_count}.'x</td><td> </td>'; # Charge During Run
+      $ret .= ' <td>'.$$map->{status}.'</td><td> </td>'; # Status
+      $ret .= ' <td>'.$gen_date.'</td><td> </td>'; # Date
+      $ret .= ' <td>'.$gen_time.'</td>'; # Time
+      $ret .= '</tr>';
+    }
+    $ret .= '</tbody></table>';
+    $ret .= "<p><b>Manufacturer Specification:</b><br>";
+
+    my $specification = "$model specification unknown";
+    $specification = "Neato Botvac Connected, eco (120 min), turbo (90 min, power 40 W)<br>" if ($model eq "BotVacConnected");
+    $specification = "Neato Botvac D3 Connected, up to 60 min<br>" if ($model eq "BotVacD3Connected");
+    $specification = "Neato Botvac D4 Connected, up to 75 min<br>" if ($model eq "BotVacD4Connected");
+    $specification = "Neato Botvac D5 Connected, up to 90 min<br>" if ($model eq "BotVacD5Connected");
+    $specification = "Neato Botvac D6/D7 Connected, up to 120 min<br>" if ($model eq "BotVacD6Connected" or $model eq "BotVacD6Connected");
+    $specification = "Vorwerk VR200, battery 84 Wh, eco (90 min, 120 qm, power 50 W), turbo (60 min, 90 qm, power 70 W)<br>" if ($model eq "VR200");
+    $specification = "Vorwerk VR220(VR300), battery 84 Wh, eco (90 min, 120 qm, power 65 W), turbo (60 min, 90 qm, power 85 W)<br>" if ($model eq "VR220");
+
+    $ret .= $specification;
+    $ret .= '</html>';
+
+    return $ret;
 }
 
 #######################################
@@ -1596,7 +1846,7 @@ sub wsOpen($$$) {
     Log3($name, 4, "BOTVAC(ws) $name: Establishing socket connection");
     $hash->{DeviceName} = join(':', $ip_address, $port);
 
-    ::DevIo_CloseDev($hash) if(::DevIo_IsOpen($hash)); 
+    ::DevIo_CloseDev($hash) if(::DevIo_IsOpen($hash));
 
     if (::DevIo_OpenDev($hash, 0, "BOTVAC::wsHandshake")) {
       Log3($name, 2, "BOTVAC(ws) $name: ERROR: Can't open websocket to $hash->{DeviceName}");
@@ -1631,8 +1881,8 @@ sub wsHandshake($) {
     my $now     = time();
     my $date    = FmtDateTimeRFC1123($now);
     my $message = lc($serial) . "\n" . $date . "\n";
-    my $hmac    = hmac_sha256_hex($message, ReadingsVal($name, "secretKey", ""));
-    
+    my $hmac    = hmac_sha256_hex($message, ReadingsVal($name, ".secretKey", ""));
+
     my $wsHandshakeCmd = "GET $path HTTP/1.1\r\n";
     $wsHandshakeCmd   .= "Host: $host:$port\r\n";
     $wsHandshakeCmd   .= "Sec-WebSocket-Key: $wsKey\r\n";
@@ -1642,13 +1892,13 @@ sub wsHandshake($) {
     $wsHandshakeCmd   .= "Date: $date\r\n";
     $wsHandshakeCmd   .= "Authorization: NEATOAPP $hmac\r\n";
     $wsHandshakeCmd   .= "Connection: Upgrade\r\n";
-    $wsHandshakeCmd   .= "\r\n";          
-    
+    $wsHandshakeCmd   .= "\r\n";
+
     Log3($name, 4, "BOTVAC(ws) $name: Starting Websocket Handshake");
     wsWrite($hash,$wsHandshakeCmd);
-    
+
     $hash->{HELPER}{wsKey}  = $wsKey;
-    
+
     return undef;
 }
 
@@ -1688,7 +1938,7 @@ sub wsCheckHandshake($$) {
 sub wsWrite($@) {
     my ($hash,$string)  = @_;
     my $name = $hash->{NAME};
-    
+
     Log3($name, 4, "BOTVAC(ws) $name: WriteFn called:\n$string");
     ::DevIo_SimpleWrite($hash, $string, 0);
 
@@ -1720,7 +1970,7 @@ sub wsCallback(@) {
     my ($param, $err, $data) = @_;
     my $hash = $param->{hash};
     my $name = $hash->{NAME};
-       
+
         if($err){
         Log3($name, 3, "received callback with error:\n$err");
         } elsif($data){
@@ -1785,10 +2035,10 @@ sub wsEncode($$;$$) {
         $wsString .= pack 'N', $len >> 32;
         $wsString .= pack 'N', ($len & 0xffffffff);
     }
-    if ($masked) { 
+    if ($masked) {
         my $mask = pack 'N', int(rand(2**32));
     $wsString .= $mask;
-    $wsString .= wsMasking($payload, $mask); 
+    $wsString .= wsMasking($payload, $mask);
     } else {
         $wsString .= $payload;
     }
@@ -1807,9 +2057,9 @@ sub wsPong($) {
 sub wsDecode($$) {
     my ($hash,$wsString) = @_;
     my $name = $hash->{NAME};
-  
+
     Log3($name, 5, "BOTVAC(ws) $name: String:\n" . $wsString);
-  
+
     while (length $wsString) {
       my $FIN =    (ord(substr($wsString,0,1)) & 0b10000000) >> 7;
       my $OPCODE = (ord(substr($wsString,0,1)) & 0b00001111);
@@ -1865,7 +2115,6 @@ sub wsMasking($$) {
 
 <a name="BOTVAC"></a>
 <h3>BOTVAC</h3>
-<div>
 <ul>
   This module controls Neato Botvac Connected and Vorwerk Robot Vacuums.<br/>
   For issuing commands or retrieving Readings it's necessary to fetch the information from the NEATO/VORWERK Server.
@@ -1893,10 +2142,18 @@ sub wsMasking($$) {
 <b>Get</b>
 <ul>
 <br>
+  <a name="batteryPercent"></a>
   <li><code>get &lt;name&gt; batteryPercent</code>
   <br>
   requests the state of the battery from Robot
-  </li><br>
+  </li>
+<br>
+  <a name="statistics"></a>
+  <li><code>get &lt;name&gt; statistics</code>
+  <br>
+  display statistical data, extracted from available maps of recent cleanings
+  </li>
+<br>
 </ul>
 
 <a name="BOTVACset"></a>
@@ -1904,24 +2161,36 @@ sub wsMasking($$) {
 <ul>
 <br>
   <li>
+  <a name="findMe"></a>
   <code> set &lt;name&gt; findMe</code>
   <br>
   plays a sound and let the LED light for easier finding of a stuck robot
   </li>
 <br>
   <li>
+  <a name="dismissCurrentAlert"></a>
   <code> set &lt;name&gt; dismissCurrentAlert</code>
   <br>
         reset an actual Warning (e.g. dustbin full)
   </li>
 <br>
   <li>
+  <a name="nextCleaningMode"></a>
   <code> set &lt;name&gt; nextCleaningMode</code>
   <br>
   Depending on Model, there are Arguments available: eco/turbo
   </li>
 <br>
   <li>
+  <a name="nextCleaningModifier"></a>
+  <code> set &lt;name&gt; nextCleaningModifier</code>
+  <br>
+   The modifier is used for next spot cleaning.
+   Depending on Model, there are Arguments available: normal/double
+  </li>
+<br>
+  <li>
+  <a name="nextCleaningNavigationMode"></a>
   <code> set &lt;name&gt; nextCleaningNavigationMode</code>
   <br>
    The navigation mode is used for the next house cleaning.
@@ -1929,73 +2198,77 @@ sub wsMasking($$) {
   </li>
 <br>
   <li>
-  <code> set &lt;name&gt; nextCleaningNavigationModifier</code>
-  <br>
-   The modifier is used for next spot cleaning.
-   Depending on Model, there are Arguments available: normal/double
-  </li>
-<br>
-  <li>
+  <a name="nextCleaningZone"></a>
   <code> set &lt;name&gt; nextCleaningZone</code>
   <br>
   Depending on Model, the ID of the zone that will be used for the next zone cleaning can be set.
   </li>
 <br>
   <li>
+  <a name="nextCleaningSpotHeight"></a>
   <code> set &lt;name&gt; nextCleaningSpotHeight</code>
   <br>
   Is defined as number between 100 - 400. The unit is cm.
   </li>
 <br>
   <li>
+  <a name="nextCleaningSpotWidth"></a>
   <code> set &lt;name&gt; nextCleaningSpotWidth</code>
   <br>
   Is defined as number between 100 - 400. The unit is cm.
   </li>
 <br>
   <li>
+  <a name="password"></a>
   <code> set &lt;name&gt; password &lt;password&gt;</code>
   <br>
         set the password for the NEATO/VORWERK account
   </li>
 <br>
   <li>
+  <a name="pause"></a>
   <code> set &lt;name&gt; pause</code>
   <br>
         interrupts the cleaning
   </li>
 <br>
   <li>
+  <a name="pauseToBase"></a>
   <code> set &lt;name&gt; pauseToBase</code>
   <br>
   stops cleaning and returns to base
   </li>
 <br>
   <li>
+  <a name="reloadMaps"></a>
   <code> set &lt;name&gt; reloadMaps</code>
   <br>
         load last map from server into the cache of the module. no file is stored!
   </li>
 <br>
   <li>
+  <a name="resume"></a>
   <code> set &lt;name&gt; resume</code>
   <br>
   resume cleaning after pause
   </li>
 <br>
   <li>
+  <a name="schedule"></a>
   <code> set &lt;name&gt; schedule</code>
   <br>
         on and off, switch time control
   </li>
 <br>
   <li>
+  <a name="sendToBase"></a>
   <code> set &lt;name&gt; sendToBase</code>
   <br>
   send roboter back to base
   </li>
 <br>
   <li>
+  <a name="setBoundariesOnFloorplan"></a>
   <code> set &lt;name&gt; setBoundariesOnFloorplan_&lt;floor plan&gt; &lt;name|{JSON String}&gt;</code>
   <br>
     Set boundaries/nogo lines in the corresponding floor plan.<br>
@@ -2011,12 +2284,14 @@ sub wsMasking($$) {
   </li>
 <br>
   <li>
+  <a name="setRobot"></a>
   <code> set &lt;name&gt; setRobot</code>
   <br>
   choose robot if more than one is registered at the used account
   </li>
 <br>
   <li>
+  <a name="startCleaning"></a>
   <code> set &lt;name&gt; startCleaning ([house|map|zone])</code>
   <br>
   start the Cleaning from the scratch.
@@ -2024,17 +2299,19 @@ sub wsMasking($$) {
   <ul>
   <li><code>house</code> - cleaning without a persisted map</li>
   <li><code>map</code> - cleaning with a persisted map</li>
-  <li><code>zone</code> - cleaning in a specific zone, set zone with nextCleaningZone</li> 
+  <li><code>zone</code> - cleaning in a specific zone, set zone with nextCleaningZone</li>
   </ul>
   </li>
 <br>
   <li>
+  <a name="startSpot"></a>
   <code> set &lt;name&gt; startSpot</code>
   <br>
   start spot-Cleaning from actual position.
   </li>
 <br>
   <li>
+  <a name="startManual"></a>
   <code> set &lt;name&gt; startManual</code>
   <br>
   start Manual Cleaning. This cleaning mode opens a direct websocket connection to the robot.
@@ -2046,24 +2323,63 @@ sub wsMasking($$) {
   </li>
 <br>
   <li>
+  <a name="statusRequest"></a>
   <code> set &lt;name&gt; statusRequest</code>
   <br>
   pull update of all readings. necessary because NEATO/VORWERK does not send updates at their own.
   </li>
 <br>
   <li>
+  <a name="stop"></a>
   <code> set &lt;name&gt; stop</code>
   <br>
-  stop cleaning and in case of manual cleaning mode close also the websocket connection
+  stop cleaning and in case of manual cleaning mode close also the websocket connection.
   </li>
 <br>
   <li>
+  <a name="syncRobots"></a>
   <code> set &lt;name&gt; syncRobots</code>
   <br>
-  sync robot data with online account. Useful if one has more then one robot registered
+  sync robot data with online account. Useful if one has more then one robot registered.
   </li>
 <br>
   <li>
+  <a name="pollingMode"></a>
+  <code> set &lt;name&gt; pollingMode &lt;on|off&gt;</code>
+  <br>
+  set polling on (default) or off like attribut disable.
+  </li>
+<br>
+  <li>
+  <a name="robotSounds"></a>
+  <code> set &lt;name&gt; robotSounds &lt;on|off&gt;</code>
+  <br>
+  set sounds on or off.
+  </li>
+<br>
+  <li>
+  <a name="dirtbinAlertReminderInterval"></a>
+  <code> set &lt;name&gt; dirtbinAlertReminderInterval &lt;30|60|90|120|150&gt;</code>
+  <br>
+  set alert intervall in minutes.
+  </li>
+<br>
+  <li>
+  <a name="filterChangeReminderInterval"></a>
+  <code> set &lt;name&gt; filterChangeReminderInterval &lt;1|2|3&gt;</code>
+  <br>
+  set alert intervall in months.
+  </li>
+<br>
+  <li>
+  <a name="brushChangeReminderInterval"></a>
+  <code> set &lt;name&gt; brushChangeReminderInterval &lt;4|5|6|7|8&gt;</code>
+  <br>
+  set alert intervall in months.
+  </li>
+<br>
+  <li>
+  <a name="wsCommand"></a>
   <code> set &lt;name&gt; wsCommand</code>
   <br>
   Commands start or stop cleaning activities.
@@ -2080,6 +2396,7 @@ sub wsMasking($$) {
   </li>
 <br>
   <li>
+  <a name="wsCombo"></a>
   <code> set &lt;name&gt; wsCombo</code>
   <br>
   Combos specify a behavior on the robot. They need to be sent with less than 1Hz frequency.
@@ -2102,15 +2419,17 @@ sub wsMasking($$) {
 <ul>
 <br>
   <li>
+  <a name="actionInterval"></a>
   <code>actionInterval</code>
   <br>
   time in seconds between status requests while Device is working
   </li>
 <br>
   <li>
+  <a name="boundaries"></a>
   <code>boundaries</code>
   <br>
-  Boundary entries separated by space in JSON format, e.g.<br>
+  Boundary entries separated by whitespace in JSON format, e.g.<br>
   {"type":"polyline","vertices":[[0.710,0.6217],[0.710,0.6923]],"name":"Bad","color":"#E54B1C","enabled":true}<br>
   {"type":"polyline","vertices":[[0.7139,0.4101],[0.7135,0.4282],[0.4326,0.3322],[0.4326,0.2533],[0.3931,0.2533],
     [0.3931,0.3426],[0.7452,0.4637],[0.7617,0.4196]],"name":"Kueche","color":"#000000","enabled":true}<br>
