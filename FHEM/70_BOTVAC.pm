@@ -836,6 +836,7 @@ sub SendCommand($$;$$@) {
             url         => $URL,
             timeout     => $timeout,
             noshutdown  => 1,
+            keepalive   => 1,
             header      => \%header,
             data        => $data,
             hash        => $hash,
