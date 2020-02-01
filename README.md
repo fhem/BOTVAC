@@ -19,7 +19,13 @@ You are invited to send pull requests to the dev branch whenever you think you c
 
 Load the modules into FHEM:
 
-    update all https://raw.githubusercontent.com/fhem/BOTVAC/master/controls_BOTVAC.txt
+* from Master branch
+
+        update all https://raw.githubusercontent.com/fhem/BOTVAC/master/controls_BOTVAC.txt
+* from Dev branch
+
+        update all https://raw.githubusercontent.com/fhem/BOTVAC/dev/controls_BOTVAC.txt
+
 Restart FHEM:
     
     shutdown restart

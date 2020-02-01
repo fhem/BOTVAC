@@ -665,7 +665,7 @@ sub SendCommand($$;$$@) {
     my $password    = ReadPassword($hash);
     my $timestamp   = gettimeofday();
     my $timeout     = 180;
-    my $header;
+    my %header;
     my $data;
     my $reqId = 0;
 
@@ -690,8 +690,8 @@ sub SendCommand($$;$$@) {
     Log3($name, 4, "BOTVAC $name: REQ option $option") if (defined($option));
     LogSuccessors($hash, @successor);
 
-    $header = "Accept: application/vnd.neato.nucleo.v1";
-    $header .= "\r\nContent-Type: application/json";
+    $header{Accept}         = "application/vnd.neato.nucleo.v1";
+    $header{'Content-Type'} = "application/json";
 
     if ($service eq "sessions") {
       if (!defined($password)) {
@@ -705,7 +705,7 @@ sub SendCommand($$;$$@) {
       %sslArgs = ( SSL_verify_mode => 0 );
 
     } elsif ($service eq "dashboard") {
-      $header .= "\r\nAuthorization: Token token=".ReadingsVal($name, ".accessToken", "");
+      $header{Authorization} = "Token token=".ReadingsVal($name, ".accessToken", "");
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/dashboard";
       %sslArgs = ( SSL_verify_mode => 0 );
@@ -714,7 +714,7 @@ sub SendCommand($$;$$@) {
       my $serial = ReadingsVal($name, "serial", "");
       return if ($serial eq "");
 
-      $header .= "\r\nAuthorization: Token token=".ReadingsVal($name, ".accessToken", "");
+      $header{Authorization} = "Token token=".ReadingsVal($name, ".accessToken", "");
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/users/me/robots/$serial/";
       $URL .= (defined($cmd) ? $cmd : "maps");
@@ -814,8 +814,8 @@ sub SendCommand($$;$$@) {
       my $message = join("\n", (lc($serial), $date, $data));
       my $hmac = hmac_sha256_hex($message, ReadingsVal($name, ".secretKey", ""));
 
-      $header .= "\r\nDate: $date";
-      $header .= "\r\nAuthorization: NEATOAPP $hmac";
+      $header{Date}          = $date;
+      $header{Authorization} = "NEATOAPP $hmac";
 
       #%sslArgs = ( SSL_ca =>  [ GetCAKey( $hash ) ] );
       %sslArgs = ( SSL_verify_mode => 0 );
@@ -828,15 +828,15 @@ sub SendCommand($$;$$@) {
       if ( defined($data) );
     Log3($name, 5, "BOTVAC $name: GET $URL")
       if ( !defined($data) );
-    Log3($name, 5, "BOTVAC $name: header $header")
-      if ( defined($header) );
+    Log3($name, 5, "BOTVAC $name: header ".join("\r\n", map(($_.': '.$header{$_}), keys %header)))
+      if ( %header );
 
     ::HttpUtils_NonblockingGet(
         {
             url         => $URL,
             timeout     => $timeout,
             noshutdown  => 1,
-            header      => $header,
+            header      => \%header,
             data        => $data,
             hash        => $hash,
             service     => $service,
