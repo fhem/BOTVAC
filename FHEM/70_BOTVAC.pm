@@ -665,17 +665,15 @@ sub SendCommand($$;$$@) {
     my $password    = ReadPassword($hash);
     my $timestamp   = gettimeofday();
     my $timeout     = 180;
+    my $reqId       = 0;
+    my $URL         = "https://";
     my %header;
     my $data;
-    my $reqId = 0;
-
-    Log3($name, 5, "BOTVAC $name: called function SendCommand()");
-
-    my $URL = "https://";
+    my %sslArgs;
     my $response;
     my $return;
 
-    my %sslArgs;
+    Log3($name, 5, "BOTVAC $name: called function SendCommand()");
 
     if ($service ne "sessions" && $service ne "dashboard") {
         return if (CheckRegistration($hash, $service, $cmd, $option, @successor));
@@ -693,6 +691,9 @@ sub SendCommand($$;$$@) {
     $header{Accept}         = "application/vnd.neato.nucleo.v1";
     $header{'Content-Type'} = "application/json";
 
+    #%sslArgs = ( SSL_ca =>  [ GetCAKey( $hash ) ] );
+    $sslArgs{SSL_verify_mode} = 0;
+
     if ($service eq "sessions") {
       if (!defined($password)) {
         readingsSingleUpdate($hash, "state", "Password missing (see instructions)",1);
@@ -702,13 +703,11 @@ sub SendCommand($$;$$@) {
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/sessions";
       $data = "{\"platform\": \"ios\", \"email\": \"$email\", \"token\": \"$token\", \"password\": \"$password\"}";
-      %sslArgs = ( SSL_verify_mode => 0 );
 
     } elsif ($service eq "dashboard") {
       $header{Authorization} = "Token token=".ReadingsVal($name, ".accessToken", "");
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/dashboard";
-      %sslArgs = ( SSL_verify_mode => 0 );
 
     } elsif ($service eq "robots") {
       my $serial = ReadingsVal($name, "serial", "");
@@ -718,7 +717,6 @@ sub SendCommand($$;$$@) {
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/users/me/robots/$serial/";
       $URL .= (defined($cmd) ? $cmd : "maps");
-      %sslArgs = ( SSL_verify_mode => 0 );
 
     } elsif ($service eq "messages") {
       my $serial = ReadingsVal($name, "serial", "");
@@ -817,8 +815,6 @@ sub SendCommand($$;$$@) {
       $header{Date}          = $date;
       $header{Authorization} = "NEATOAPP $hmac";
 
-      #%sslArgs = ( SSL_ca =>  [ GetCAKey( $hash ) ] );
-      %sslArgs = ( SSL_verify_mode => 0 );
     } elsif ($service eq "loadmap") {
       $URL = $cmd;
     }
@@ -844,7 +840,7 @@ sub SendCommand($$;$$@) {
             cmd         => $cmd,
             successor   => \@successor,
             timestamp   => $timestamp,
-            sslargs     => { %sslArgs },
+            sslargs     => \%sslArgs,
             callback    => \&ReceiveCommand,
         }
     );
