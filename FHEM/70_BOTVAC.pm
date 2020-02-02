@@ -824,7 +824,7 @@ sub SendCommand($$;$$@) {
       if ( defined($data) );
     Log3($name, 5, "BOTVAC $name: GET $URL")
       if ( !defined($data) );
-    Log3($name, 5, "BOTVAC $name: header ".join("\r\n", map(($_.': '.$header{$_}), keys %header)))
+    Log3($name, 5, "BOTVAC $name: header ".join("\n", map(($_.': '.$header{$_}), keys %header)))
       if ( %header );
 
     ::HttpUtils_NonblockingGet(
@@ -851,11 +851,12 @@ sub SendCommand($$;$$@) {
 ###################################
 sub ReceiveCommand($$$) {
     my ( $param, $err, $data ) = @_;
-    my $hash      = $param->{hash};
-    my $name      = $hash->{NAME};
-    my $service   = $param->{service};
-    my $cmd       = $param->{cmd};
-    my @successor = @{$param->{successor}};
+    my $hash       = $param->{hash};
+    my $name       = $hash->{NAME};
+    my $service    = $param->{service};
+    my $cmd        = $param->{cmd};
+    my $httpheader = $param->{httpheader};
+    my @successor  = @{$param->{successor}};
 
     my $rc = ( $param->{buf} ) ? $param->{buf} : $param;
 
@@ -864,6 +865,7 @@ sub ReceiveCommand($$$) {
     my $reqId = 0;
 
     Log3($name, 5, "BOTVAC $name: called function ReceiveCommand() rc: $rc err: $err data: $data ");
+    Log3($name, 5, "BOTVAC $name: httpheader: $httpheader") if (defined($httpheader));
 
     readingsBeginUpdate($hash);
 
