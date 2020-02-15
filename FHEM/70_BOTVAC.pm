@@ -665,7 +665,9 @@ sub SendCommand($$;$$@) {
     my $password    = ReadPassword($hash);
     my $timestamp   = gettimeofday();
     my $timeout     = 180;
+    my $keepalive   = 1;
     my $reqId       = 0;
+    my $connection;
     my $URL         = "https://";
     my %header;
     my $data;
@@ -703,11 +705,13 @@ sub SendCommand($$;$$@) {
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/sessions";
       $data = "{\"platform\": \"ios\", \"email\": \"$email\", \"token\": \"$token\", \"password\": \"$password\"}";
+      $keepalive = 0;
 
     } elsif ($service eq "dashboard") {
       $header{Authorization} = "Token token=".ReadingsVal($name, ".accessToken", "");
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/dashboard";
+      $keepalive = 0;
 
     } elsif ($service eq "robots") {
       my $serial = ReadingsVal($name, "serial", "");
@@ -717,6 +721,7 @@ sub SendCommand($$;$$@) {
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/users/me/robots/$serial/";
       $URL .= (defined($cmd) ? $cmd : "maps");
+      $keepalive = 0;
 
     } elsif ($service eq "messages") {
       my $serial = ReadingsVal($name, "serial", "");
@@ -817,6 +822,7 @@ sub SendCommand($$;$$@) {
 
     } elsif ($service eq "loadmap") {
       $URL = $cmd;
+      $keepalive = 0;
     }
 
     # send request via HTTP-POST method
@@ -827,23 +833,25 @@ sub SendCommand($$;$$@) {
     Log3($name, 5, "BOTVAC $name: header ".join("\n", map(($_.': '.$header{$_}), keys %header)))
       if ( %header );
 
-    ::HttpUtils_NonblockingGet(
-        {
-            url         => $URL,
-            timeout     => $timeout,
-            noshutdown  => 1,
-            keepalive   => 1,
-            header      => \%header,
-            data        => $data,
-            hash        => $hash,
-            service     => $service,
-            cmd         => $cmd,
-            successor   => \@successor,
-            timestamp   => $timestamp,
-            sslargs     => \%sslArgs,
-            callback    => \&ReceiveCommand,
-        }
-    );
+    my $params = {
+        url         => $URL,
+        timeout     => $timeout,
+        noshutdown  => 1,
+        keepalive   => $keepalive,
+        header      => \%header,
+        data        => $data,
+        hash        => $hash,
+        service     => $service,
+        cmd         => $cmd,
+        successor   => \@successor,
+        timestamp   => $timestamp,
+        sslargs     => \%sslArgs,
+        callback    => \&ReceiveCommand
+    };
+    $connection = GetConnectionName($hash, $URL);
+    map {$hash->{helper}{".HTTP_CONNECTION"}{$connection}{$_} = $params->{$_}} keys %{$params};
+
+    ::HttpUtils_NonblockingGet($hash->{helper}{".HTTP_CONNECTION"}{$connection});
 
     return;
 }
@@ -855,7 +863,8 @@ sub ReceiveCommand($$$) {
     my $name       = $hash->{NAME};
     my $service    = $param->{service};
     my $cmd        = $param->{cmd};
-    my $httpheader = $param->{httpheader};
+    my $url        = $param->{url};
+    my $httpHeader = $param->{httpheader};
     my @successor  = @{$param->{successor}};
 
     my $rc = ( $param->{buf} ) ? $param->{buf} : $param;
@@ -863,9 +872,10 @@ sub ReceiveCommand($$$) {
     my $loadMap;
     my $return;
     my $reqId = 0;
+    my $closeConnection = ($httpHeader =~ m/.*[Cc]onnection: keep-alive.*/ ? 0 : 1);
 
     Log3($name, 5, "BOTVAC $name: called function ReceiveCommand() rc: $rc err: $err data: $data ");
-    Log3($name, 5, "BOTVAC $name: httpheader: $httpheader") if (defined($httpheader));
+    Log3($name, 5, "BOTVAC $name: http header: $httpHeader") if (defined($httpHeader));
 
     readingsBeginUpdate($hash);
 
@@ -1272,9 +1282,16 @@ sub ReceiveCommand($$$) {
 
     readingsEndUpdate( $hash, 1 );
 
+    if ($closeConnection or !@successor) {
+      my $connection = GetConnectionName($hash, $url);
+      Log3($name, 4, "BOTVAC $name: Close connection $connection");
+      ::HttpUtils_Close($hash->{helper}{".HTTP_CONNECTION"}{$connection})
+          if (defined($hash->{helper}{".HTTP_CONNECTION"}) and defined($hash->{helper}{".HTTP_CONNECTION"}{$connection}));
+    }
+
     if ($loadMap) {
-      my $url = ReadingsVal($name, ".map_url", "");
-      push(@successor , ["loadmap", $url]) if ($url ne "");
+      my $mapurl = ReadingsVal($name, ".map_url", "");
+      push(@successor , ["loadmap", $mapurl]) if ($mapurl ne "");
     }
 
     if (@successor) {
@@ -1298,7 +1315,7 @@ sub ReceiveCommand($$$) {
       SendCommand($hash, $cmdService, $cmdCmd, $cmdOption, @successor)
           if (($service ne $cmdService) or ($cmd ne $cmdCmd) or ($newReqId = "true"));
     }
-
+    
     return;
 }
 
@@ -1680,6 +1697,17 @@ sub GetNucleoHost($) {
     } else {
         return $vendors->{neato};
     }
+}
+
+sub GetConnectionName($) {
+  my ($hash, $url) = @_;
+  my $name = $hash->{NAME};
+
+  if ($url =~ /https:\/\/([^\/]*)\/.*/) {
+    my $connection = $1;
+    Log3($name, 5, "BOTVAC $name: Connection name $connection");
+    return $connection;
+  }
 }
 
 sub GetValidityEnd($) {
