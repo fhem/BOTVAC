@@ -665,7 +665,7 @@ sub SendCommand($$;$$@) {
     my $password    = ReadPassword($hash);
     my $timestamp   = gettimeofday();
     my $timeout     = 180;
-    my $keepalive   = 1;
+    my $keepalive   = 0;
     my $reqId       = 0;
     my $connection;
     my $URL         = "https://";
@@ -705,13 +705,11 @@ sub SendCommand($$;$$@) {
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/sessions";
       $data = "{\"platform\": \"ios\", \"email\": \"$email\", \"token\": \"$token\", \"password\": \"$password\"}";
-      $keepalive = 0;
 
     } elsif ($service eq "dashboard") {
       $header{Authorization} = "Token token=".ReadingsVal($name, ".accessToken", "");
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/dashboard";
-      $keepalive = 0;
 
     } elsif ($service eq "robots") {
       my $serial = ReadingsVal($name, "serial", "");
@@ -721,7 +719,6 @@ sub SendCommand($$;$$@) {
       $URL .= GetBeehiveHost($hash->{VENDOR});
       $URL .= "/users/me/robots/$serial/";
       $URL .= (defined($cmd) ? $cmd : "maps");
-      $keepalive = 0;
 
     } elsif ($service eq "messages") {
       my $serial = ReadingsVal($name, "serial", "");
@@ -819,10 +816,10 @@ sub SendCommand($$;$$@) {
 
       $header{Date}          = $date;
       $header{Authorization} = "NEATOAPP $hmac";
+      $keepalive = 1;
 
     } elsif ($service eq "loadmap") {
       $URL = $cmd;
-      $keepalive = 0;
     }
 
     # send request via HTTP-POST method
