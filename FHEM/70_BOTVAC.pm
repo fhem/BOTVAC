@@ -667,7 +667,6 @@ sub SendCommand($$;$$@) {
     my $timeout     = 180;
     my $keepalive   = 0;
     my $reqId       = 0;
-    my $connection;
     my $URL         = "https://";
     my %header;
     my $data;
@@ -845,10 +844,13 @@ sub SendCommand($$;$$@) {
         sslargs     => \%sslArgs,
         callback    => \&ReceiveCommand
     };
-    $connection = GetConnectionName($hash, $URL);
-    map {$hash->{helper}{".HTTP_CONNECTION"}{$connection}{$_} = $params->{$_}} keys %{$params};
 
-    ::HttpUtils_NonblockingGet($hash->{helper}{".HTTP_CONNECTION"}{$connection});
+    if ($keepalive) {
+      map {$hash->{helper}{".HTTP_CONNECTION"}{$_} = $params->{$_}} keys %{$params};
+      ::HttpUtils_NonblockingGet($hash->{helper}{".HTTP_CONNECTION"});
+    } else {
+      ::HttpUtils_NonblockingGet($params);
+    }
 
     return;
 }
@@ -861,7 +863,8 @@ sub ReceiveCommand($$$) {
     my $service    = $param->{service};
     my $cmd        = $param->{cmd};
     my $url        = $param->{url};
-    my $httpHeader = $param->{httpheader};
+    my $keepalive  = $param->{keepalive};
+    my $respHeader = $param->{httpheader};
     my @successor  = @{$param->{successor}};
 
     my $rc = ( $param->{buf} ) ? $param->{buf} : $param;
@@ -869,10 +872,10 @@ sub ReceiveCommand($$$) {
     my $loadMap;
     my $return;
     my $reqId = 0;
-    my $closeConnection = ($httpHeader =~ m/.*[Cc]onnection: keep-alive.*/ ? 0 : 1);
+    my $closeConnection = ($respHeader =~ m/.*[Cc]onnection: keep-alive.*/ ? 0 : 1);
 
     Log3($name, 5, "BOTVAC $name: called function ReceiveCommand() rc: $rc err: $err data: $data ");
-    Log3($name, 5, "BOTVAC $name: http header: $httpHeader") if (defined($httpHeader));
+    Log3($name, 5, "BOTVAC $name: http header: $respHeader") if (defined($respHeader));
 
     readingsBeginUpdate($hash);
 
@@ -1279,11 +1282,11 @@ sub ReceiveCommand($$$) {
 
     readingsEndUpdate( $hash, 1 );
 
-    if ($closeConnection or !@successor) {
-      my $connection = GetConnectionName($hash, $url);
-      Log3($name, 4, "BOTVAC $name: Close connection $connection");
-      ::HttpUtils_Close($hash->{helper}{".HTTP_CONNECTION"}{$connection})
-          if (defined($hash->{helper}{".HTTP_CONNECTION"}) and defined($hash->{helper}{".HTTP_CONNECTION"}{$connection}));
+    if (defined($hash->{helper}{".HTTP_CONNECTION"}) and
+        (($keepalive and $closeConnection) or !@successor)) {
+      Log3($name, 4, "BOTVAC $name: Close connection");
+      ::HttpUtils_Close($hash->{helper}{".HTTP_CONNECTION"});
+      undef($hash->{helper}{".HTTP_CONNECTION"});
     }
 
     if ($loadMap) {
@@ -1694,17 +1697,6 @@ sub GetNucleoHost($) {
     } else {
         return $vendors->{neato};
     }
-}
-
-sub GetConnectionName($) {
-  my ($hash, $url) = @_;
-  my $name = $hash->{NAME};
-
-  if ($url =~ /https:\/\/([^\/]*)\/.*/) {
-    my $connection = $1;
-    Log3($name, 5, "BOTVAC $name: Connection name $connection");
-    return $connection;
-  }
 }
 
 sub GetValidityEnd($) {
