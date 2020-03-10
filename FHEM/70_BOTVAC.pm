@@ -45,6 +45,7 @@ sub BOTVAC_Initialize($) {
     $hash->{AttrList} = "disable:0,1 " .
                         "actionInterval " .
                         "boundaries:textField-long " .
+                        "sslVerify:0,1 " .
                          $readingFnAttributes;
 }
 
@@ -58,7 +59,6 @@ use GPUtils qw(:all);  # wird für den Import der FHEM Funktionen aus der fhem.p
 
 use Time::HiRes qw(gettimeofday);
 use JSON qw(decode_json encode_json);
-#use IO::Socket::SSL::Utils qw(PEM_string2cert);
 use Digest::SHA qw(hmac_sha256_hex sha1_hex);
 use Encode qw(encode_utf8);
 use MIME::Base64;
@@ -668,9 +668,9 @@ sub SendCommand($$;$$@) {
     my $keepalive   = 0;
     my $reqId       = 0;
     my $URL         = "https://";
+    my %sslArgs     = {};
     my %header;
     my $data;
-    my %sslArgs;
     my $response;
     my $return;
 
@@ -692,8 +692,17 @@ sub SendCommand($$;$$@) {
     $header{Accept}         = "application/vnd.neato.nucleo.v1";
     $header{'Content-Type'} = "application/json";
 
-    #%sslArgs = ( SSL_ca =>  [ GetCAKey( $hash ) ] );
-    $sslArgs{SSL_verify_mode} = 0;
+    my $sslVerify= AttrVal($name, "sslVerify", undef);
+    if(defined($sslVerify)) {
+      eval "use IO::Socket::SSL";
+      if($@) {
+        Log3($name, 2, $@);
+      } else {
+        my $sslVerifyMode= eval("$sslVerify ? SSL_VERIFY_PEER : SSL_VERIFY_NONE");
+        Log3($name, 5, "SSL verify mode set to $sslVerifyMode");
+        $sslArgs{SSL_verify_mode} = $sslVerifyMode;
+      }
+    }
 
     if ($service eq "sessions") {
       if (!defined($password)) {
