@@ -1242,8 +1242,8 @@ sub ReceiveCommand($$$) {
                   my $t2 = GetSecondsFromString($map->{start_at});
                   my $dt = $t1-$t2-$map->{time_in_suspended_cleaning}-$map->{time_in_error}-$map->{time_in_pause};
                   my $dc = $map->{run_charge_at_start}-$map->{run_charge_at_end};
-                  my $expa = int($map->{cleaned_area}*100/$dc+.5) if ($dc > 0);
-                  my $expt = int($dt*100/$dc/60+.5) if ($dc > 0);
+                  my $expa = $dc>0?int($map->{cleaned_area}*100/$dc+.5):0;
+                  my $expt = $dc>0?int($dt*100/$dc/60+.5):0;
                   readingsBulkUpdateIfChanged($hash, "map_duration", int($dt/6+.5)/10); # min
                   readingsBulkUpdateIfChanged($hash, "map_expected_area", $expa>0?$expa:0); # qm
                   readingsBulkUpdateIfChanged($hash, "map_run_discharge", $dc>0?$dc:0); # %
