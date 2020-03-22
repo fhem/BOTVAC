@@ -881,7 +881,7 @@ sub ReceiveCommand($$$) {
     my $loadMap;
     my $return;
     my $reqId = 0;
-    my $closeConnection = ($respHeader =~ m/.*[Cc]onnection: keep-alive.*/ ? 0 : 1);
+    my $closeConnection = (defined($respHeader) && $respHeader =~ m/.*[Cc]onnection: keep-alive.*/ ? 0 : 1);
 
     Log3($name, 5, "BOTVAC $name: called function ReceiveCommand() rc: $rc err: $err data: $data ");
     Log3($name, 5, "BOTVAC $name: http header: $respHeader") if (defined($respHeader));
