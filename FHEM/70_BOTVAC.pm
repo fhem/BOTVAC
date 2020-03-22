@@ -668,7 +668,7 @@ sub SendCommand($$;$$@) {
     my $keepalive   = 0;
     my $reqId       = 0;
     my $URL         = "https://";
-    my %sslArgs     = {};
+    my %sslArgs     = ();
     my %header;
     my $data;
     my $response;
