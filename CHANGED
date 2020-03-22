@@ -1,1 +1,6 @@
+2020-03-22 - SVN upload
+
+- initial sslArgs hash
+- initial response header
+- initial response error and data
 2020-03-22 - setup github workflow
