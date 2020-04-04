@@ -47,6 +47,8 @@ sub BOTVAC_Initialize {
                         "boundaries:textField-long " .
                         "sslVerify:0,1 " .
                          $readingFnAttributes;
+
+    return;
 }
 
 package BOTVAC;
@@ -645,6 +647,8 @@ sub AddExtension {
     $::data{FWEXT}{$url}{deviceName} = $name;
     $::data{FWEXT}{$url}{FUNC}       = $func;
     $::data{FWEXT}{$url}{LINK}       = $link;
+
+    return;
 }
 
 #########################
@@ -655,6 +659,8 @@ sub RemoveExtension {
     my $name = $::data{FWEXT}{$url}{deviceName};
     Log3($name, 2, "Unregistering BOTVAC $name for URL $url...");
     delete $::data{FWEXT}{$url};
+
+    return;
 }
 
 ###################################
@@ -1339,7 +1345,9 @@ sub GetTimeFromString {
         my $time = timelocal($6, $5, $4, $3, $2 - 1, $1 - 1900);
         return FmtDateTime($time + fhemTzOffset($time));
     }
-  }
+  };
+
+  return;
 }
 
 sub GetSecondsFromString {
@@ -1351,7 +1359,9 @@ sub GetSecondsFromString {
         my $time = timelocal($6, $5, $4, $3, $2 - 1, $1 - 1900);
         return $time;
     }
-  }
+  };
+
+  return;
 }
 
 sub SetRobot {
@@ -1370,6 +1380,8 @@ sub SetRobot {
     readingsBulkUpdateIfChanged($hash, "macAddr",        $robots[$robot]->{macAddr});
     readingsBulkUpdateIfChanged($hash, "nucleoUrl",      $robots[$robot]->{nucleoUrl});
     readingsBulkUpdateIfChanged($hash, "robot",          $robot);
+
+    return;
 }
 
 sub GetCleaningParameter {
@@ -1397,6 +1409,8 @@ sub SetServices {
   my $serviceList = join(", ", map { "$_:$services->{$_}" } keys %$services);
 
   $hash->{SERVICES} = $serviceList if (!defined($hash->{SERVICES}) or $hash->{SERVICES} ne $serviceList);
+
+  return;
 }
 
 sub StorePassword {
@@ -1727,6 +1741,8 @@ sub LogSuccessors {
       $msg .= join(",", map { defined($_) ? $_ : '' } @succ_item);
     }
     Log3($name, 4, $msg)  if (@successor > 0);
+
+    return;
 }
 
 sub ShowMap {
@@ -1882,6 +1898,8 @@ sub wsOpen {
     } else {
       readingsSingleUpdate($hash,'result','ws_ok',1);
     }
+
+    return;
 }
 
 sub wsClose {
@@ -1894,7 +1912,9 @@ sub wsClose {
     wsEncode($hash, $normal_closure, "close");
     delete $hash->{HELPER}{WEBSOCKETS};
     delete $hash->{HELPER}{wsKey};
-    readingsSingleUpdate($hash,'state','ws_closed',1) if (::DevIo_CloseDev($hash))
+    readingsSingleUpdate($hash,'state','ws_closed',1) if (::DevIo_CloseDev($hash));
+
+    return;
 }
 
 sub wsHandshake {
@@ -1991,6 +2011,8 @@ sub wsRead {
     } else {
       Log3($name, 1, "BOTVAC(ws) $name: corrupted data found:\n$buf");
     }
+
+    return;
 }
 
 sub wsCallback {
@@ -2014,7 +2036,10 @@ sub wsCallback {
 
 sub wsReady {
     my ($hash) = @_;
-    return ::DevIo_OpenDev($hash, 1, "BOTVAC::wsHandshake") if ( $hash->{STATE} eq "disconnected" );
+    if ( $hash->{STATE} eq "disconnected" ) {
+      return ::DevIo_OpenDev($hash, 1, "BOTVAC::wsHandshake");
+    }
+    return;
 }
 
 # 0                   1                   2                   3
@@ -2072,6 +2097,8 @@ sub wsEncode {
 
     Log3($name, 3, "BOTVAC(ws) $name: String: " . unpack('H*',$wsString));
     wsWrite($hash, $wsString);
+
+    return;
 }
 
 sub wsPong {
@@ -2079,6 +2106,7 @@ sub wsPong {
     my $name = $hash->{NAME};
     Log3($name, 3, "BOTVAC(ws) $name: wsPong");
     wsEncode($hash, undef, "pong");
+    return;
 }
 
 sub wsDecode {
@@ -2122,6 +2150,8 @@ sub wsDecode {
         wsPong($hash) if ($OPCODE == $opcode{"ping"});
       }
     }
+
+    return;
 }
 
 sub wsMasking {
