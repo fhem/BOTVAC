@@ -30,7 +30,7 @@ use strict;
 use warnings;
 
 
-sub BOTVAC_Initialize($) {
+sub BOTVAC_Initialize {
     my ($hash) = @_;
     our $readingFnAttributes;
 
@@ -103,7 +103,7 @@ my %opcode = (    # Opcode interpretation of the ws "Payload data
 );
 
 ###################################
-sub Define($$) {
+sub Define {
     my ( $hash, $def ) = @_;
     my @a = split( "[ \t][ \t]*", $def );
     my $name = $hash->{NAME};
@@ -162,7 +162,7 @@ sub Define($$) {
 }
 
 #####################################
-sub GetStatus($;$) {
+sub GetStatus {
     my ( $hash, $update ) = @_;
     my $name      = $hash->{NAME};
     my $interval  = $hash->{INTERVAL};
@@ -201,7 +201,7 @@ sub GetStatus($;$) {
 }
 
 ###################################
-sub Get($@) {
+sub Get {
     my ( $hash, @a ) = @_;
     my $name = $hash->{NAME};
     my $what;
@@ -230,7 +230,7 @@ sub Get($@) {
 }
 
 ###################################
-sub Set($@) {
+sub Set {
     my ( $hash, @a ) = @_;
     my $name  = $hash->{NAME};
 
@@ -574,7 +574,7 @@ sub Set($@) {
 }
 
 ###################################
-sub Undefine($$) {
+sub Undefine {
     my ( $hash, $arg ) = @_;
     my $name = $hash->{NAME};
 
@@ -589,7 +589,7 @@ sub Undefine($$) {
 }
 
 ###################################
-sub Delete($$) {
+sub Delete {
     my ( $hash, $arg ) = @_;
     my $name = $hash->{NAME};
 
@@ -602,7 +602,7 @@ sub Delete($$) {
 }
 
 ###################################
-sub Attr(@)
+sub Attr
 {
   my ($cmd,$name,$attr_name,$attr_value) = @_;
   my $hash  = $::defs{$name};
@@ -637,7 +637,7 @@ sub Attr(@)
 ############################################################################################################
 
 #########################
-sub AddExtension($$$) {
+sub AddExtension {
     my ( $name, $func, $link ) = @_;
 
     my $url = "/$link";
@@ -648,7 +648,7 @@ sub AddExtension($$$) {
 }
 
 #########################
-sub RemoveExtension($) {
+sub RemoveExtension {
     my ($link) = @_;
 
     my $url  = "/$link";
@@ -658,7 +658,7 @@ sub RemoveExtension($) {
 }
 
 ###################################
-sub SendCommand($$;$$@) {
+sub SendCommand {
     my ( $hash, $service, $cmd, $option, @successor ) = @_;
     my $name        = $hash->{NAME};
     my $email       = $hash->{EMAIL};
@@ -865,7 +865,7 @@ sub SendCommand($$;$$@) {
 }
 
 ###################################
-sub ReceiveCommand($$$) {
+sub ReceiveCommand {
     my ( $param, $err, $data ) = @_;
     my $hash       = $param->{hash};
     my $name       = $hash->{NAME};
@@ -1330,7 +1330,7 @@ sub ReceiveCommand($$$) {
     return;
 }
 
-sub GetTimeFromString($) {
+sub GetTimeFromString {
   my ($timeStr) = @_;
 
   eval {
@@ -1342,7 +1342,7 @@ sub GetTimeFromString($) {
   }
 }
 
-sub GetSecondsFromString($) {
+sub GetSecondsFromString {
   my ($timeStr) = @_;
 
   eval {
@@ -1354,7 +1354,7 @@ sub GetSecondsFromString($) {
   }
 }
 
-sub SetRobot($$) {
+sub SetRobot {
     my ( $hash, $robot ) = @_;
     my $name = $hash->{NAME};
 
@@ -1372,7 +1372,7 @@ sub SetRobot($$) {
     readingsBulkUpdateIfChanged($hash, "robot",          $robot);
 }
 
-sub GetCleaningParameter($$$) {
+sub GetCleaningParameter {
   my ($hash, $param, $default) = @_;
   my $name = $hash->{NAME};
 
@@ -1380,7 +1380,7 @@ sub GetCleaningParameter($$$) {
   return ReadingsVal($name, $nextReading, ReadingsVal($name, $param, $default));
 }
 
-sub GetServiceVersion($$) {
+sub GetServiceVersion {
   my ($hash, $service) = @_;
   my $name = $hash->{NAME};
 
@@ -1399,7 +1399,7 @@ sub SetServices {
   $hash->{SERVICES} = $serviceList if (!defined($hash->{SERVICES}) or $hash->{SERVICES} ne $serviceList);
 }
 
-sub StorePassword($$) {
+sub StorePassword {
     my ($hash, $password) = @_;
     my $index = $hash->{TYPE}."_".$hash->{NAME}."_passwd";
     my $key = getUniqueId().$index;
@@ -1422,7 +1422,7 @@ sub StorePassword($$) {
     return "password successfully saved";
 }
 
-sub ReadPassword($) {
+sub ReadPassword {
     my ($hash) = @_;
     my $name = $hash->{NAME};
     my $index = $hash->{TYPE}."_".$hash->{NAME}."_passwd";
@@ -1456,7 +1456,7 @@ sub ReadPassword($) {
     }
 }
 
-sub CheckRegistration($$$$$) {
+sub CheckRegistration {
   my ( $hash, $service, $cmd, $option, @successor ) = @_;
   my $name = $hash->{NAME};
 
@@ -1482,7 +1482,7 @@ sub CheckRegistration($$$$$) {
   return;
 }
 
-sub GetBoolean($) {
+sub GetBoolean {
     my ($value) = @_;
     my $booleans = {
         '0'       => "0",
@@ -1498,7 +1498,7 @@ sub GetBoolean($) {
     }
 }
 
-sub SetBoolean($) {
+sub SetBoolean {
     my ($value) = @_;
     my $booleans = {
         '0'       => "false",
@@ -1514,7 +1514,7 @@ sub SetBoolean($) {
     }
 }
 
-sub BuildState($$$$) {
+sub BuildState {
     my ($hash,$state,$action,$error) = @_;
     my $states = {
         '0'       => "Invalid",
@@ -1539,7 +1539,7 @@ sub BuildState($$$$) {
     }
 }
 
-sub GetActionText($) {
+sub GetActionText {
     my ($action) = @_;
     my $actions = {
         '0'       => "Invalid",
@@ -1567,7 +1567,7 @@ sub GetActionText($) {
     }
 }
 
-sub GetErrorText($) {
+sub GetErrorText {
     my ($error) = @_;
     my $errors = {
         'ui_alert_invalid'                => 'Ok',
@@ -1589,7 +1589,7 @@ sub GetErrorText($) {
     }
 }
 
-sub GetDayText($) {
+sub GetDayText {
     my ($day) = @_;
     my $days = {
         '0'       => "Sunday",
@@ -1608,7 +1608,7 @@ sub GetDayText($) {
     }
 }
 
-sub GetCategoryText($) {
+sub GetCategoryText {
     my ($category) = @_;
     my $categories = {
         '1' => 'manual',
@@ -1624,7 +1624,7 @@ sub GetCategoryText($) {
     }
 }
 
-sub GetModeText($) {
+sub GetModeText {
     my ($mode) = @_;
     my $modes = {
         '1' => 'eco',
@@ -1638,7 +1638,7 @@ sub GetModeText($) {
     }
 }
 
-sub GetModifierText($) {
+sub GetModifierText {
     my ($modifier) = @_;
     my $modifiers = {
         '1' => 'normal',
@@ -1652,7 +1652,7 @@ sub GetModifierText($) {
     }
 }
 
-sub GetNavigationModeText($) {
+sub GetNavigationModeText {
     my ($navMode) = @_;
     my $navModes = {
         '1' => 'normal',
@@ -1667,7 +1667,7 @@ sub GetNavigationModeText($) {
     }
 }
 
-sub GetAuthStatusText($) {
+sub GetAuthStatusText {
     my ($authStatus) = @_;
     my $authStatusHash = {
         '0' => 'not supported',
@@ -1682,7 +1682,7 @@ sub GetAuthStatusText($) {
     }
 }
 
-sub GetBeehiveHost($) {
+sub GetBeehiveHost {
     my ($vendor) = @_;
     my $vendors = {
         'neato'   => 'beehive.neatocloud.com',
@@ -1696,7 +1696,7 @@ sub GetBeehiveHost($) {
     }
 }
 
-sub GetNucleoHost($) {
+sub GetNucleoHost {
     my ($vendor) = @_;
     my $vendors = {
         'neato'   => 'nucleo.neatocloud.com',
@@ -1710,12 +1710,12 @@ sub GetNucleoHost($) {
     }
 }
 
-sub GetValidityEnd($) {
+sub GetValidityEnd {
     my ($validFor) = @_;
     return ($validFor =~ /\d+/ ? FmtDateTime(time() + $validFor) : $validFor);
 }
 
-sub LogSuccessors($@) {
+sub LogSuccessors {
     my ($hash,@successor) = @_;
     my $name = $hash->{NAME};
 
@@ -1729,7 +1729,7 @@ sub LogSuccessors($@) {
     Log3($name, 4, $msg)  if (@successor > 0);
 }
 
-sub ShowMap($;$$) {
+sub ShowMap {
     my ($name,$width,$height) = @_;
 
     my $img = '<img src="/fhem/BOTVAC/'.$name.'/map"';
@@ -1755,7 +1755,7 @@ sub GetMap() {
 
 }
 
-sub ShowStatistics($) {
+sub ShowStatistics {
     my ($name) = @_;
     my $hash  = $::defs{$name};
     
@@ -1765,7 +1765,7 @@ sub ShowStatistics($) {
     return GetStatistics($hash);
 }
 
-sub GetStatistics($) {
+sub GetStatistics {
     my($hash) = @_;
     my $name = $hash->{NAME};
     my $mapcount = @{$hash->{helper}{MAPS}};
@@ -1866,7 +1866,7 @@ sub GetStatistics($) {
 #######################################
 #       Websocket Functions
 #######################################
-sub wsOpen($$$) {
+sub wsOpen {
     my ($hash,$ip_address,$port) = @_;
     my $name = $hash->{NAME};
 
@@ -1884,7 +1884,7 @@ sub wsOpen($$$) {
     }
 }
 
-sub wsClose($) {
+sub wsClose {
     my $hash = shift;
     my $name = $hash->{NAME};
     my $normal_closure =  pack("H*", "03e8");  #code 1000
@@ -1897,7 +1897,7 @@ sub wsClose($) {
     readingsSingleUpdate($hash,'state','ws_closed',1) if (::DevIo_CloseDev($hash))
 }
 
-sub wsHandshake($) {
+sub wsHandshake {
     my $hash    = shift;
     my $name    = $hash->{NAME};
     my $host    = ReadingsVal($name, "wlanIpAddress", "");
@@ -1929,7 +1929,7 @@ sub wsHandshake($) {
     return undef;
 }
 
-sub wsCheckHandshake($$) {
+sub wsCheckHandshake {
     my ($hash,$response) = @_;
     my $name = $hash->{NAME};
 
@@ -1962,7 +1962,7 @@ sub wsCheckHandshake($$) {
     return undef;
 }
 
-sub wsWrite($@) {
+sub wsWrite {
     my ($hash,$string)  = @_;
     my $name = $hash->{NAME};
 
@@ -1972,7 +1972,7 @@ sub wsWrite($@) {
     return undef;
 }
 
-sub wsRead($) {
+sub wsRead {
     my $hash = shift;
     my $name = $hash->{NAME};
     my $buf;
@@ -1993,7 +1993,7 @@ sub wsRead($) {
     }
 }
 
-sub wsCallback(@) {
+sub wsCallback {
     my ($param, $err, $data) = @_;
     my $hash = $param->{hash};
     my $name = $hash->{NAME};
@@ -2012,7 +2012,7 @@ sub wsCallback(@) {
    return undef;
 }
 
-sub wsReady($) {
+sub wsReady {
     my ($hash) = @_;
     return ::DevIo_OpenDev($hash, 1, "BOTVAC::wsHandshake") if ( $hash->{STATE} eq "disconnected" );
 }
@@ -2036,7 +2036,7 @@ sub wsReady($) {
 # |                     Payload Data continued ...                |
 # +---------------------------------------------------------------+
 # https://tools.ietf.org/html/draft-ietf-hybi-thewebsocketprotocol-17
-sub wsEncode($$;$$) {
+sub wsEncode {
     my ($hash, $payload, $type, $masked) = @_;
     my $name = $hash->{NAME};
     $type //= "text";
@@ -2074,14 +2074,14 @@ sub wsEncode($$;$$) {
     wsWrite($hash, $wsString);
 }
 
-sub wsPong($) {
+sub wsPong {
     my $hash = shift;
     my $name = $hash->{NAME};
     Log3($name, 3, "BOTVAC(ws) $name: wsPong");
     wsEncode($hash, undef, "pong");
 }
 
-sub wsDecode($$) {
+sub wsDecode {
     my ($hash,$wsString) = @_;
     my $name = $hash->{NAME};
 
@@ -2124,7 +2124,7 @@ sub wsDecode($$) {
     }
 }
 
-sub wsMasking($$) {
+sub wsMasking {
     my ($payload, $mask) = @_;
     $mask = $mask x (int(length($payload) / 4) + 1);
     $mask = substr($mask, 0, length($payload));
