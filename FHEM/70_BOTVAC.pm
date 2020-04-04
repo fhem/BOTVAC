@@ -317,7 +317,7 @@ sub Set {
         my @names;
         for (my $i = 0; $i < @Boundaries; $i++) {
           my $name = $Boundaries[$i]->{name};
-          push @names,$name if (!(grep { $_ eq $name } @names) and ($name ne ""));
+          push @names,$name if (!(grep { $_ eq $name } @names) && ($name ne ""));
         }
         my $BoundariesList  = @names ? "multiple-strict,".join(",", @names) : "textField";
         $usage .= " setBoundariesOnFloorplan_0:".$BoundariesList if (ReadingsVal($name, "floorplan_0_id" ,"") ne "");
@@ -1300,7 +1300,7 @@ sub ReceiveCommand {
     readingsEndUpdate( $hash, 1 );
 
     if (defined($hash->{helper}{".HTTP_CONNECTION"}) and
-        (($keepalive and $closeConnection) or !@successor)) {
+        (($keepalive && $closeConnection) || !@successor)) {
       Log3($name, 4, "BOTVAC $name: Close connection");
       ::HttpUtils_Close($hash->{helper}{".HTTP_CONNECTION"});
       undef($hash->{helper}{".HTTP_CONNECTION"});
@@ -1408,7 +1408,7 @@ sub SetServices {
   my $name = $hash->{NAME};
   my $serviceList = join(", ", map { "$_:$services->{$_}" } keys %$services);
 
-  $hash->{SERVICES} = $serviceList if (!defined($hash->{SERVICES}) or $hash->{SERVICES} ne $serviceList);
+  $hash->{SERVICES} = $serviceList if (!defined($hash->{SERVICES}) || $hash->{SERVICES} ne $serviceList);
 
   return;
 }
@@ -1776,7 +1776,7 @@ sub ShowStatistics {
     my $hash  = $::defs{$name};
     
     return "maps for statistics are not available yet"
-        if (!defined($hash->{helper}{MAPS}) or @{$hash->{helper}{MAPS}} == 0);
+        if (!defined($hash->{helper}{MAPS}) || @{$hash->{helper}{MAPS}} == 0);
 
     return GetStatistics($hash);
 }
