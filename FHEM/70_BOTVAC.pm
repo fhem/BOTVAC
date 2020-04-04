@@ -841,7 +841,7 @@ sub SendCommand {
       if ( defined($data) );
     Log3($name, 5, "BOTVAC $name: GET $URL")
       if ( !defined($data) );
-    Log3($name, 5, "BOTVAC $name: header ".join("\n", map(($_.': '.$header{$_}), keys %header)))
+    Log3($name, 5, "BOTVAC $name: header ".join("\n", map {$_.': '.$header{$_}} keys %header))
       if ( %header );
 
     my $params = {
