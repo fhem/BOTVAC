@@ -694,11 +694,11 @@ sub SendCommand {
 
     my $sslVerify= AttrVal($name, "sslVerify", undef);
     if(defined($sslVerify)) {
-      eval "use IO::Socket::SSL";
+      eval {use IO::Socket::SSL};
       if($@) {
         Log3($name, 2, $@);
       } else {
-        my $sslVerifyMode= eval("$sslVerify ? SSL_VERIFY_PEER : SSL_VERIFY_NONE");
+        my $sslVerifyMode= eval {$sslVerify ? SSL_VERIFY_PEER : SSL_VERIFY_NONE};
         Log3($name, 5, "SSL verify mode set to $sslVerifyMode");
         $sslArgs{SSL_verify_mode} = $sslVerifyMode;
       }
@@ -1405,7 +1405,7 @@ sub StorePassword {
     my $key = getUniqueId().$index;
     my $enc_pwd = "";
 
-    if(eval "use Digest::MD5;1") {
+    if(eval {use Digest::MD5;1}) {
       $key = Digest::MD5::md5_hex(unpack "H*", $key);
       $key .= Digest::MD5::md5_hex($key);
     }
@@ -1439,7 +1439,7 @@ sub ReadPassword {
     }
 
     if ( defined($password) ) {
-      if ( eval "use Digest::MD5;1" ) {
+      if ( eval {use Digest::MD5;1} ) {
         $key = Digest::MD5::md5_hex(unpack "H*", $key);
         $key .= Digest::MD5::md5_hex($key);
       }
