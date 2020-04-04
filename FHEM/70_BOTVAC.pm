@@ -63,8 +63,8 @@ use Digest::SHA qw(hmac_sha256_hex sha1_hex);
 use Encode qw(encode_utf8);
 use MIME::Base64;
 
-require "DevIo.pm";
-require "HttpUtils.pm";
+require DevIo;
+require HttpUtils;
 
 ## Import der FHEM Funktionen
 BEGIN {
