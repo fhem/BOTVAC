@@ -940,7 +940,7 @@ sub ReceiveCommand {
                 } else {
                     Log3($name, 5, "BOTVAC $name: RES ERROR $service/$cmd\n$data");
                 }
-                return undef;
+                return;
             }
         }
 
@@ -1435,7 +1435,7 @@ sub ReadPassword {
 
     if ( defined($err) ) {
       Log3($name, 3, "BOTVAC $name: unable to read password from file: $err");
-      return undef;
+      return;
     }
 
     if ( defined($password) ) {
@@ -1452,7 +1452,7 @@ sub ReadPassword {
       return $dec_pwd;
     } else {
       Log3($name, 3, "BOTVAC $name: No password in file");
-      return undef;
+      return;
     }
 }
 
@@ -1926,7 +1926,7 @@ sub wsHandshake {
 
     $hash->{HELPER}{wsKey}  = $wsKey;
 
-    return undef;
+    return;
 }
 
 sub wsCheckHandshake {
@@ -1959,7 +1959,7 @@ sub wsCheckHandshake {
         readingsSingleUpdate($hash,'state','ws_handshake-error',1);
       }
     }
-    return undef;
+    return;
 }
 
 sub wsWrite {
@@ -1969,7 +1969,7 @@ sub wsWrite {
     Log3($name, 4, "BOTVAC(ws) $name: WriteFn called:\n$string");
     ::DevIo_SimpleWrite($hash, $string, 0);
 
-    return undef;
+    return;
 }
 
 sub wsRead {
@@ -2009,7 +2009,7 @@ sub wsCallback {
         } else {
         Log3($name, 2, "received callback without Data and Error String!!!");
     }
-   return undef;
+   return;
 }
 
 sub wsReady {
