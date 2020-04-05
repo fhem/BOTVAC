@@ -24,34 +24,7 @@
 #
 ##############################################################################
 
-package main;
-
-use strict;
-use warnings;
-
-
-sub BOTVAC_Initialize {
-    my ($hash) = @_;
-    our $readingFnAttributes;
-
-    $hash->{DefFn}    = "BOTVAC::Define";
-    $hash->{GetFn}    = "BOTVAC::Get";
-    $hash->{SetFn}    = "BOTVAC::Set";
-    $hash->{UndefFn}  = "BOTVAC::Undefine";
-    $hash->{DeleteFn} = "BOTVAC::Delete";
-    $hash->{ReadFn}   = "BOTVAC::wsRead";
-    $hash->{ReadyFn}  = "BOTVAC::wsReady";
-    $hash->{AttrFn}   = "BOTVAC::Attr";
-    $hash->{AttrList} = "disable:0,1 " .
-                        "actionInterval " .
-                        "boundaries:textField-long " .
-                        "sslVerify:0,1 " .
-                         $readingFnAttributes;
-
-    return;
-}
-
-package BOTVAC;
+package FHEM::BOTVAC;
 
 use strict;
 use warnings;
@@ -71,29 +44,36 @@ require HttpUtils;
 ## Import der FHEM Funktionen
 BEGIN {
     GP_Import(qw(
-        AttrVal
-        createUniqueId
-        FmtDateTime
-        FmtDateTimeRFC1123
-        fhemTzOffset
-        getKeyValue
-        setKeyValue
-        getUniqueId
-        InternalTimer
-        InternalVal
-        readingsSingleUpdate
-        readingsBulkUpdate
-        readingsBulkUpdateIfChanged
-        readingsBeginUpdate
-        readingsDelete
-        readingsEndUpdate
-        ReadingsNum
-        ReadingsVal
-        RemoveInternalTimer
-        Log3
-        trim
-    ))
-};
+      AttrVal
+      createUniqueId
+      fhemTzOffset
+      FmtDateTime
+      FmtDateTimeRFC1123
+      getKeyValue
+      getUniqueId
+      InternalTimer
+      InternalVal
+      Log3
+      readingFnAttributes
+      readingsBeginUpdate
+      readingsBulkUpdate
+      readingsBulkUpdateIfChanged
+      readingsDelete
+      readingsEndUpdate
+      ReadingsNum
+      readingsSingleUpdate
+      ReadingsVal
+      RemoveInternalTimer
+      setKeyValue
+      trim
+    ));
+}
+
+GP_Export(
+    qw(
+      Initialize
+    )
+);
 
 my %opcode = (    # Opcode interpretation of the ws "Payload data
   'continuation'  => 0x00,
@@ -103,6 +83,27 @@ my %opcode = (    # Opcode interpretation of the ws "Payload data
   'ping'          => 0x09,
   'pong'          => 0x0A
 );
+
+###################################
+sub Initialize {
+    my ($hash) = @_;
+
+    $hash->{DefFn}    = \&Define;
+    $hash->{GetFn}    = \&Get;
+    $hash->{SetFn}    = \&Set;
+    $hash->{UndefFn}  = \&Undefine;
+    $hash->{DeleteFn} = \&Delete;
+    $hash->{ReadFn}   = \&wsRead;
+    $hash->{ReadyFn}  = \&wsReady;
+    $hash->{AttrFn}   = \&Attr;
+    $hash->{AttrList} = "disable:0,1 " .
+                        "actionInterval " .
+                        "boundaries:textField-long " .
+                        "sslVerify:0,1 " .
+                         $readingFnAttributes;
+
+    return;
+}
 
 ###################################
 sub Define {
@@ -150,7 +151,7 @@ sub Define {
     $hash->{INTERVAL} = $interval;
 
     unless ( defined( AttrVal( $name, "webCmd", undef ) ) ) {
-      no warnings "once";
+      #no warnings "once";
       $::attr{$name}{webCmd} = 'startCleaning:stop:sendToBase';
     }
 
