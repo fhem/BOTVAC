@@ -45,6 +45,7 @@ require HttpUtils;
 BEGIN {
     GP_Import(qw(
       AttrVal
+      CommandAttr
       createUniqueId
       fhemTzOffset
       FmtDateTime
@@ -150,10 +151,8 @@ sub Define {
     $hash->{VENDOR} = $vendor;
     $hash->{INTERVAL} = $interval;
 
-    unless ( defined( AttrVal( $name, "webCmd", undef ) ) ) {
-      #no warnings "once";
-      $::attr{$name}{webCmd} = 'startCleaning:stop:sendToBase';
-    }
+    CommandAttr($hash, "$name webCmd startCleaning:stop:sendToBase")
+        if (AttrVal( $name, 'webCmd', 'none' ) eq 'none');
 
     # start the status update timer
     RemoveInternalTimer($hash);
