@@ -33,6 +33,7 @@ use POSIX;
 use GPUtils qw(:all);  # wird für den Import der FHEM Funktionen aus der fhem.pl benötigt
 
 use Time::HiRes qw(gettimeofday);
+use Time::Local qw(timelocal);
 use JSON qw(decode_json encode_json);
 use Digest::SHA qw(hmac_sha256_hex sha1_hex);
 use Encode qw(encode_utf8);
@@ -75,6 +76,12 @@ GP_Export(
       Initialize
     )
 );
+
+my $useDigestMD5 = 0;
+if ( eval { require Digest::MD5; 1 } ) {
+  $useDigestMD5 = 1;
+  Digest::MD5->import();
+}
 
 my %opcode = (    # Opcode interpretation of the ws "Payload data
   'continuation'  => 0x00,
@@ -156,9 +163,9 @@ sub Define {
 
     # start the status update timer
     RemoveInternalTimer($hash);
-    InternalTimer( gettimeofday() + 2, "BOTVAC::GetStatus", $hash, 1 );
+    InternalTimer( gettimeofday() + 2, \&GetStatus, $hash, 1 );
 
-    AddExtension($name, "BOTVAC::GetMap", "BOTVAC/$name/map");
+    AddExtension($name, \&GetMap, "BOTVAC/$name/map");
 
     return;
 }
@@ -173,10 +180,10 @@ sub GetStatus {
     Log3($name, 5, "BOTVAC $name: called function GetStatus()");
 
     # use actionInterval if state is busy or paused
-    $interval = AttrVal($name, "actionInterval", $interval) if (ReadingsVal($name, "stateId", "0") =~ /2|3/);
+    $interval = AttrVal($name, "actionInterval", $interval) if (ReadingsVal($name, "stateId", "0") =~ /2|3/x);
 
     RemoveInternalTimer($hash);
-    InternalTimer( gettimeofday() + $interval, "BOTVAC::GetStatus", $hash, 0 );
+    InternalTimer( gettimeofday() + $interval, \&GetStatus, $hash, 0 );
 
     return if ( AttrVal($name, "disable", 0) == 1 or ReadingsVal($name,"pollingMode",1) == 0);
 
@@ -189,8 +196,8 @@ sub GetStatus {
       push(@successor, ["dashboard", undef]) if ($secs <= $interval);
 
       push(@successor, ["messages", "getSchedule"]);
-      push(@successor, ["messages", "getGeneralInfo"]) if (GetServiceVersion($hash, "generalInfo") =~ /.*-1/);
-      push(@successor, ["messages", "getPreferences"]) if (GetServiceVersion($hash, "preferences") ne "");
+      push(@successor, ["messages", "getGeneralInfo"]) if (GetServiceVersion($hash, "generalInfo") =~ /.*-1/x);
+      push(@successor, ["messages", "getPreferences"]) if (GetServiceVersion($hash, "preferences") ne '');
 
       SendCommand($hash, "messages", "getRobotState", undef, @successor);
     }
@@ -1339,13 +1346,10 @@ sub ReceiveCommand {
 sub GetTimeFromString {
   my ($timeStr) = @_;
 
-  eval {
-    use Time::Local;
-    if(defined($timeStr) and $timeStr =~ m/^(\d{4})-(\d{2})-(\d{2})T([0-2]\d):([0-5]\d):([0-5]\d)Z$/) {
-        my $time = timelocal($6, $5, $4, $3, $2 - 1, $1 - 1900);
-        return FmtDateTime($time + fhemTzOffset($time));
-    }
-  };
+  if(defined($timeStr) and $timeStr =~ m/^(\d{4})-(\d{2})-(\d{2})T([0-2]\d):([0-5]\d):([0-5]\d)Z$/x) {
+      my $time = timelocal($6, $5, $4, $3, $2 - 1, $1 - 1900);
+      return FmtDateTime($time + fhemTzOffset($time));
+  }
 
   return;
 }
@@ -1353,13 +1357,10 @@ sub GetTimeFromString {
 sub GetSecondsFromString {
   my ($timeStr) = @_;
 
-  eval {
-    use Time::Local;
-    if(defined($timeStr) and $timeStr =~ m/^(\d{4})-(\d{2})-(\d{2})T([0-2]\d):([0-5]\d):([0-5]\d)Z$/) {
-        my $time = timelocal($6, $5, $4, $3, $2 - 1, $1 - 1900);
-        return $time;
-    }
-  };
+  if(defined($timeStr) and $timeStr =~ m/^(\d{4})-(\d{2})-(\d{2})T([0-2]\d):([0-5]\d):([0-5]\d)Z$/x) {
+      my $time = timelocal($6, $5, $4, $3, $2 - 1, $1 - 1900);
+      return $time;
+  }
 
   return;
 }
@@ -1419,7 +1420,7 @@ sub StorePassword {
     my $key = getUniqueId().$index;
     my $enc_pwd = "";
 
-    if(eval {use Digest::MD5;1}) {
+    if($useDigestMD5) {
       $key = Digest::MD5::md5_hex(unpack "H*", $key);
       $key .= Digest::MD5::md5_hex($key);
     }
@@ -1453,12 +1454,12 @@ sub ReadPassword {
     }
 
     if ( defined($password) ) {
-      if ( eval {use Digest::MD5;1} ) {
+      if($useDigestMD5) {
         $key = Digest::MD5::md5_hex(unpack "H*", $key);
         $key .= Digest::MD5::md5_hex($key);
       }
       my $dec_pwd = '';
-      for my $char (map { pack('C', hex($_)) } ($password =~ /(..)/g)) {
+      for my $char (map { pack('C', hex($_)) } ($password =~ /(..)/gx)) {
         my $decode=chop($key);
         $dec_pwd.=chr(ord($char)^ord($decode));
         $key=$decode.$key;
@@ -1891,7 +1892,7 @@ sub wsOpen {
 
     ::DevIo_CloseDev($hash) if(::DevIo_IsOpen($hash));
 
-    if (::DevIo_OpenDev($hash, 0, "BOTVAC::wsHandshake")) {
+    if (::DevIo_OpenDev($hash, 0, \&wsHandshake)) {
       Log3($name, 2, "BOTVAC(ws) $name: ERROR: Can't open websocket to $hash->{DeviceName}");
       readingsSingleUpdate($hash,'result','ws_connect_error',1);
       readingsSingleUpdate($hash,'result','ws_ko',1);
@@ -2007,7 +2008,7 @@ sub wsRead {
       wsDecode($hash,$buf);
     } elsif( $buf =~ /HTTP\/1.1 101 Switching Protocols/ ) {
       Log3($name, 4, "BOTVAC(ws) $name: received HTTP data string, start response processing:\n$buf");
-      BOTVAC::wsCheckHandshake($hash,$buf);
+      wsCheckHandshake($hash,$buf);
     } else {
       Log3($name, 1, "BOTVAC(ws) $name: corrupted data found:\n$buf");
     }
@@ -2037,7 +2038,7 @@ sub wsCallback {
 sub wsReady {
     my ($hash) = @_;
     if ( $hash->{STATE} eq "disconnected" ) {
-      return ::DevIo_OpenDev($hash, 1, "BOTVAC::wsHandshake");
+      return ::DevIo_OpenDev($hash, 1, \&wsHandshake);
     }
     return;
 }
@@ -2376,7 +2377,7 @@ sub wsMasking {
   Even though an internet connection is necessary as the initialization is triggered by a remote call.
   <br>
   <em>Note:</em> If the robot does not receive any messages for 30 seconds it will exit Manual Cleaning,
-  but it will not close the websocket connection automaticaly.
+  but it will not close the websocket connection automatically.
   </li>
 <br>
   <li>
