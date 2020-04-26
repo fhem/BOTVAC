@@ -937,10 +937,29 @@ sub ReceiveCommand {
         if ( $data ne "" ) {
             if ( $service eq "loadmap" ) {
                 # use $data later
-            } elsif ( $data =~ /^{"message":"Could not find robot_serial for specified vendor_name"}$/ ) {
+            } elsif ( $data eq '{"message":"Could not find robot_serial for specified vendor_name"}' ) {
                 # currently no data available
                 readingsBulkUpdateIfChanged($hash, "state", "Couldn't find robot");
                 readingsEndUpdate( $hash, 1 );
+                return;
+            } elsif ( $data eq '{"message":"Bad credentials"}' ||
+                      $data eq '{"message":"Not allowed"}' ) {
+                if ( !defined($cmd) || $cmd eq "" ) {
+                    Log3($name, 3, "BOTVAC $name: RES $service - $data");
+                } else {
+                    Log3($name, 3, "BOTVAC $name: RES $service/$cmd - $data");
+                }
+
+                # remove invalid access token
+                readingsDelete($hash, ".accessToken");
+                readingsEndUpdate( $hash, 1 );
+
+                if ( $service ne "sessions") {
+                    # put last command back into queue
+                    unshift(@successor, [$service, $cmd]);
+                    # send registration
+                    SendCommand($hash, "sessions", undef, undef, @successor);
+                }
                 return;
             } elsif ( $data =~ /^{/ || $data =~ /^\[/ ) {
                 if ( !defined($cmd) || $cmd eq "" ) {
@@ -1210,16 +1229,6 @@ sub ReceiveCommand {
         # dashboard
         elsif ( $service eq "dashboard" ) {
           if ( ref($return) eq "HASH" ) {
-            # Bad credentials
-            if (defined($return->{message}) && $return->{message} eq 'Bad credentials') {
-              Log3($name, 3, "BOTVAC $name: Received message $return->{message}");
-              
-              TriggerRegistration($hash, $service, $cmd, @successor);
-
-              readingsEndUpdate( $hash, 1 );
-              return;
-            }
-
             if ( ref($return->{robots} ) eq "ARRAY" ) {
               my @robotList = ();
               my @robots = @{$return->{robots}};
@@ -1253,16 +1262,6 @@ sub ReceiveCommand {
 
         # robots
         elsif ( $service eq "robots" ) {
-          # Bad credentials
-          if (ref($return) eq "HASH" && defined($return->{message}) && $return->{message} eq 'Bad credentials') {
-            Log3($name, 3, "BOTVAC $name: Received message $return->{message}");
-            
-            TriggerRegistration($hash, $service, $cmd, @successor);
-
-            readingsEndUpdate( $hash, 1 );
-            return;
-          }
-
           if ( $cmd eq "maps" ) {
             if ( ref($return) eq "HASH" ) {
               if ( ref($return->{maps} ) eq "ARRAY" ) {
@@ -1517,21 +1516,6 @@ sub CheckRegistration {
 
     return 1;
   }
-
-  return;
-}
-
-sub TriggerRegistration {
-  my ($hash, $service, $cmd, @successor) = @_;
-
-  # remove invalid access token
-  readingsDelete($hash, ".accessToken");
-
-  # put last command back into queue
-  unshift(@successor, [$service, $cmd]);
-
-  # send registration
-  SendCommand($hash, "sessions", undef, undef, @successor);
 
   return;
 }
