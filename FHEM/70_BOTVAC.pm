@@ -918,6 +918,9 @@ sub ReceiveCommand {
         # stop pulling for current interval
         Log3($name, 4, "BOTVAC $name: drop successors");
         LogSuccessors($hash, @successor);
+
+        readingsEndUpdate( $hash, 1 );
+
         return;
     }
 
@@ -953,6 +956,7 @@ sub ReceiveCommand {
                 } else {
                     Log3($name, 5, "BOTVAC $name: RES ERROR $service/$cmd\n$data");
                 }
+                readingsEndUpdate( $hash, 1 );
                 return;
             }
         }
@@ -1206,6 +1210,16 @@ sub ReceiveCommand {
         # dashboard
         elsif ( $service eq "dashboard" ) {
           if ( ref($return) eq "HASH" ) {
+            # Bad credentials
+            if (defined($return->{message}) && $return->{message} eq 'Bad credentials') {
+              Log3($name, 3, "BOTVAC $name: Received message $return->{message}");
+              
+              TriggerRegistration($hash, $service, $cmd, @successor);
+
+              readingsEndUpdate( $hash, 1 );
+              return;
+            }
+
             if ( ref($return->{robots} ) eq "ARRAY" ) {
               my @robotList = ();
               my @robots = @{$return->{robots}};
@@ -1239,6 +1253,16 @@ sub ReceiveCommand {
 
         # robots
         elsif ( $service eq "robots" ) {
+          # Bad credentials
+          if (ref($return) eq "HASH" && defined($return->{message}) && $return->{message} eq 'Bad credentials') {
+            Log3($name, 3, "BOTVAC $name: Received message $return->{message}");
+            
+            TriggerRegistration($hash, $service, $cmd, @successor);
+
+            readingsEndUpdate( $hash, 1 );
+            return;
+          }
+
           if ( $cmd eq "maps" ) {
             if ( ref($return) eq "HASH" ) {
               if ( ref($return->{maps} ) eq "ARRAY" ) {
@@ -1493,6 +1517,21 @@ sub CheckRegistration {
 
     return 1;
   }
+
+  return;
+}
+
+sub TriggerRegistration {
+  my ($hash, $service, $cmd, @successor) = @_;
+
+  # remove invalid access token
+  readingsDelete($hash, ".accessToken");
+
+  # put last command back into queue
+  unshift(@successor, [$service, $cmd]);
+
+  # send registration
+  SendCommand($hash, "sessions", undef, undef, @successor);
 
   return;
 }
