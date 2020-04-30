@@ -1,3 +1,8 @@
+2020-04-30 - SVN upload
+
+- optimize error message handling
+- renew accessToken if necessary
+- PBP issues
 2020-04-30 - Merge branch 'dev'
 2020-04-26 - Optimze error message handling
 2020-04-26 - Renew accessToken if necessary
