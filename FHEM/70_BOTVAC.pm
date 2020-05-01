@@ -986,7 +986,8 @@ sub ReceiveCommand {
             # getSchedule, enableSchedule, disableSchedule
             if ( ref($return->{data}) eq "HASH" ) {
               my $scheduleData = $return->{data};
-              readingsBulkUpdateIfChanged($hash, "scheduleEnabled", GetBoolean($scheduleData->{enabled}));
+              readingsBulkUpdateIfChanged($hash, "scheduleEnabled", GetBoolean($scheduleData->{enabled}))
+                  if (defined($scheduleData->{enabled}));
               readingsBulkUpdateIfChanged($hash, "scheduleType",    $scheduleData->{type})
                   if (defined($scheduleData->{type}));
 
