@@ -30,8 +30,8 @@ use strict;
 use warnings;
 use POSIX;
 
-use GPUtils qw(:all)
-  ;    # wird für den Import der FHEM Funktionen aus der fhem.pl benötigt
+# wird für den Import der FHEM Funktionen aus der fhem.pl benötigt
+use GPUtils qw(:all);
 
 use Time::HiRes qw(gettimeofday);
 use Time::Local qw(timelocal);
@@ -142,17 +142,17 @@ sub Define {
     my $interval = 85;
 
     if ( defined( $a[3] ) ) {
-        if ( lc( $a[3] ) =~ /^(neato|vorwerk)$/ ) {
+        if ( lc( $a[3] ) =~ /^(neato|vorwerk)$/x ) {
             $vendor   = $1;
             $interval = $a[4] if ( defined( $a[4] ) );
         }
-        elsif ( $a[3] =~ /^[0-9]+$/ and not defined( $a[4] ) ) {
+        elsif ( $a[3] =~ /^[0-9]+$/x and not defined( $a[4] ) ) {
             $interval = $a[3];
         }
         else {
             StorePassword( $hash, $a[3] );
             if ( defined( $a[4] ) ) {
-                if ( lc( $a[4] ) =~ /^(neato|vorwerk)$/ ) {
+                if ( lc( $a[4] ) =~ /^(neato|vorwerk)$/x ) {
                     $vendor   = $1;
                     $interval = $a[5] if ( defined( $a[5] ) );
                 }
@@ -233,7 +233,7 @@ sub Get {
 
     $what = $a[1];
 
-    if ( $what =~ /^(batteryPercent)$/ ) {
+    if ( $what =~ /^(batteryPercent)$/x ) {
         if ( defined( $hash->{READINGS}{$what}{VAL} ) ) {
             return $hash->{READINGS}{$what}{VAL};
         }
@@ -241,7 +241,7 @@ sub Get {
             return "no such reading: $what";
         }
     }
-    elsif ( $what =~ /^(statistics)$/ ) {
+    elsif ( $what =~ /^(statistics)$/x ) {
         if ( defined( $hash->{helper}{MAPS} )
             and @{ $hash->{helper}{MAPS} } > 0 )
         {
@@ -309,20 +309,20 @@ sub Set {
 
     # preferences
     $usage .= " robotSounds:on,off"
-      if ( GetServiceVersion( $hash, "preferences" ) !~ /(^$)|(basic-1)/ );
+      if ( GetServiceVersion( $hash, "preferences" ) !~ /(?:^$)|(?:basic-1)/x );
     $usage .= " dirtbinAlertReminderInterval:30,60,90,120,150"
       if ( GetServiceVersion( $hash, "preferences" ) =~
-        /(basic-\d)|(advanced-\d)/ );
+        /(basic-\d)|(advanced-\d)/x );
     $usage .= " filterChangeReminderInterval:1,2,3"
       if ( GetServiceVersion( $hash, "preferences" ) =~
-        /(basic-\d)|(advanced-\d)/ );
+        /(basic-\d)|(advanced-\d)/x );
     $usage .= " brushChangeReminderInterval:4,5,6,7,8"
       if ( GetServiceVersion( $hash, "preferences" ) =~
-        /(basic-\d)|(advanced-\d)/ );
+        /(basic-\d)|(advanced-\d)/x );
 
     # house cleaning
     $usage .= " nextCleaningMode:eco,turbo"
-      if ( $houseCleaningSrv =~ /basic-\d/ );
+      if ( $houseCleaningSrv =~ /basic-\d/x );
     $usage .= " nextCleaningNavigationMode:normal,extra#care"
       if ( $houseCleaningSrv eq "minimal-2" );
     $usage .= " nextCleaningNavigationMode:normal,extra#care,deep"
@@ -332,7 +332,7 @@ sub Set {
     # spot cleaning
     $usage .= " nextCleaningModifier:normal,double"
       if ( $spotCleaningSrv eq "basic-1" or $spotCleaningSrv eq "minimal-2" );
-    if ( $spotCleaningSrv =~ /basic-\d/ ) {
+    if ( $spotCleaningSrv =~ /basic-\d/x ) {
         $usage .= " nextCleaningSpotWidth:100,200,300,400";
         $usage .= " nextCleaningSpotHeight:100,200,300,400";
     }
@@ -534,14 +534,14 @@ sub Set {
     }
 
     # setBoundaries
-    elsif ( $a[1] =~ /^setBoundariesOnFloorplan_\d$/ ) {
+    elsif ( $a[1] =~ /^setBoundariesOnFloorplan_\d$/x ) {
         my $floorplan = substr( $a[1], 25, 1 );
         Log3( $name, 2, "BOTVAC set $name $arg" );
 
         return "No argument given" if ( !defined( $a[2] ) );
 
         my $setBoundaries = "";
-        if ( $a[2] =~ /^\{.*\}/ ) {
+        if ( $a[2] =~ /^\{.*\}/x ) {
             $setBoundaries = $a[2];
         }
         elsif ( defined( $hash->{helper}{BoundariesList} ) ) {
@@ -551,7 +551,7 @@ sub Set {
                 foreach my $name (@names) {
                     if ( $Boundaries[$i]->{name} eq $name ) {
                         $setBoundaries .= ","
-                          if ( $setBoundaries =~ /^\{.*\}/ );
+                          if ( $setBoundaries =~ /^\{.*\}/x );
                         $setBoundaries .= encode_json( $Boundaries[$i] );
                     }
                 }
@@ -585,7 +585,7 @@ sub Set {
     }
 
     # wsCommand || wsCommand
-    elsif ( $a[1] =~ /wsCombo|wsCommand/ ) {
+    elsif ( $a[1] =~ /wsCombo|wsCommand/x ) {
         Log3( $name, 2, "BOTVAC set $name $arg" );
 
         return "No argument given" if ( !defined( $a[2] ) );
@@ -615,7 +615,7 @@ sub Set {
 
     # preferences
     elsif ( $a[1] =~
-/^(robotSounds|dirtbinAlertReminderInterval|filterChangeReminderInterval|brushChangeReminderInterval)$/
+/^(robotSounds|dirtbinAlertReminderInterval|filterChangeReminderInterval|brushChangeReminderInterval)$/x
       )
     {
         my $item = $1;
@@ -626,12 +626,12 @@ sub Set {
         return "No argument given" if ( !defined( $a[2] ) );
 
         foreach my $reading ( keys %{ $hash->{READINGS} } ) {
-            if ( $reading =~ /^pref_(.*)/ ) {
+            if ( $reading =~ /^pref_(.*)/x ) {
                 my $prefName = $1;
                 $params{$prefName} = ReadingsVal( $name, $reading, "null" );
                 $params{$prefName} *= 43200
                   if (  $prefName =~ /ChangeReminderInterval/
-                    and $params{$prefName} =~ /^\d*$/ );
+                    and $params{$prefName} =~ /^\d*$/x );
                 $params{$prefName} = SetBoolean( $params{$prefName} )
                   if ( $prefName eq "robotSounds" );
             }
@@ -642,7 +642,7 @@ sub Set {
 
         $params{$item} = $a[2];
         $params{$item} *= 43200
-          if ( $item =~ /ChangeReminderInterval/ && $params{$item} =~ /^\d*$/ );
+          if ( $item =~ /ChangeReminderInterval/ && $params{$item} =~ /^\d*$/x );
         $params{$item} = SetBoolean( $params{$item} )
           if ( $item eq "robotSounds" );
 
@@ -692,12 +692,12 @@ sub Attr {
     my $err;
     if ( $cmd eq "set" ) {
         if ( $attr_name eq "boundaries" ) {
-            if ( $attr_value !~ /^\{.*\}/ ) {
+            if ( $attr_value !~ /^\{.*\}/x ) {
                 $err =
 "Invalid value $attr_value for attribute $attr_name. Must be a space separated list of JSON strings.";
             }
             else {
-                my @boundaries = split( /\s/, $attr_value );
+                my @boundaries = split( '\s', $attr_value );
                 my @areas;
                 if ( @boundaries > 1 ) {
                     foreach my $area (@boundaries) {
@@ -1100,7 +1100,7 @@ sub ReceiveCommand {
                 }
                 return;
             }
-            elsif ( $data =~ /^{/ || $data =~ /^\[/ ) {
+            elsif ( $data =~ /^{/x || $data =~ /^\[/x ) {
                 if ( !defined($cmd) || $cmd eq "" ) {
                     Log3( $name, 4, "BOTVAC $name: RES $service - $data" );
                 }
@@ -1139,7 +1139,7 @@ sub ReceiveCommand {
 
                     my %currentEvents;
                     foreach ( keys %{ $hash->{READINGS} } ) {
-                        $currentEvents{$_} = 1 if ( $_ =~ /^event\d.*/ );
+                        $currentEvents{$_} = 1 if ( $_ =~ /^event\d.*/x );
                     }
 
                     if ( ref( $scheduleData->{events} ) eq "ARRAY" ) {
@@ -1401,10 +1401,10 @@ sub ReceiveCommand {
                                 my $value = $data->{$key};
                                 $value /= 43200
                                   if (  $key =~ /ChangeReminderInterval/
-                                    and $value =~ /^[1-9]\d*$/ );
+                                    and $value =~ /^[1-9]\d*$/x );
                                 $value = GetBoolean($value)
                                   if ( $key =~
-/(robotSounds)|(dirtbinAlert)|(allAlerts)|(leds)|(buttonClicks)|(clock24h)/
+/(robotSounds)|(dirtbinAlert)|(allAlerts)|(leds)|(buttonClicks)|(clock24h)/x
                                   );
                                 readingsBulkUpdateIfChanged( $hash,
                                     "pref_$key", $value );
@@ -1456,7 +1456,7 @@ sub ReceiveCommand {
                             GetBoolean( $availableCommands->{goToBase} ) );
                         readingsBulkUpdateIfChanged( $hash, ".stop",
                             GetBoolean( $availableCommands->{stop} ) )
-                          unless ( $cmd =~ /start.*/
+                          unless ( $cmd =~ /start.*/x
                             or $cmd eq "getRobotManualCleaningInfo" );
                     }
                     if ( ref( $return->{availableServices} ) eq "HASH" ) {
@@ -1762,7 +1762,7 @@ sub GetServiceVersion {
     my $name = $hash->{NAME};
 
     my $serviceList = InternalVal( $name, "SERVICES", "" );
-    if ( $serviceList =~ /$service:([^,]*)/ ) {
+    if ( $serviceList =~ /$service:([^,]*)/x ) {
         return $1;
     }
     return "";
@@ -2116,7 +2116,7 @@ sub GetNucleoHost {
 sub GetValidityEnd {
     my ($validFor) = @_;
     return (
-        $validFor =~ /\d+/ ? FmtDateTime( time() + $validFor ) : $validFor );
+        $validFor =~ /\d+/x ? FmtDateTime( time() + $validFor ) : $validFor );
 }
 
 sub LogSuccessors {
@@ -2149,7 +2149,7 @@ sub ShowMap {
 sub GetMap() {
     my ($request) = @_;
 
-    if ( $request =~ /^\/BOTVAC\/(\w+)\/map/ ) {
+    if ( $request =~ /^\/BOTVAC\/(\w+)\/map/x ) {
         my $name   = $1;
         my $width  = $3;
         my $height = $5;
@@ -2268,22 +2268,23 @@ sub GetStatistics {
             ( $dt > 0 and $dc > 0 ) ? ( int( $dc * 600 / $dt + .5 ) / 10 ) : 0 )
           . '</td><td> </td>';    # Discharge Speed
         $ret .= ' <td>'
-          . ( ( $expt > 0 and $expa > 0 )
+          . (
+              ( $expt > 0 and $expa > 0 )
             ? ( int( $expa * 10 / $expt + .5 ) ) / 10
-            : 0 )
-          . '</td><td> </td>';    # Area Speed
+            : 0
+          ) . '</td><td> </td>';    # Area Speed
         $ret .= ' <td>'
           . GetCategoryText( $$map->{category} )
-          . '</td><td> </td>';    # Cleaning Category
+          . '</td><td> </td>';      # Cleaning Category
         $ret .= ' <td>'
           . GetModeText( $$map->{mode} )
-          . '</td><td> </td>';    # Cleaning Mode
+          . '</td><td> </td>';      # Cleaning Mode
         $ret .= ' <td>'
           . GetModifierText( $$map->{modifier} )
-          . '</td><td> </td>';    # Cleaning Frequency
+          . '</td><td> </td>';      # Cleaning Frequency
         $ret .= ' <td>'
           . $$map->{suspended_cleaning_charging_count}
-          . 'x</td><td> </td>';    # Charge During Run
+          . 'x</td><td> </td>';     # Charge During Run
         $ret .= ' <td>' . $$map->{status} . '</td><td> </td>';    # Status
         $ret .= ' <td>' . $gen_date . '</td><td> </td>';          # Date
         $ret .= ' <td>' . $gen_time . '</td>';                    # Time
