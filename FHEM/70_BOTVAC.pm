@@ -365,9 +365,10 @@ sub Set {
             my @Boundaries = @{ $hash->{helper}{BoundariesList} };
             my @names;
             for ( my $i = 0 ; $i < @Boundaries ; $i++ ) {
-                my $name = $Boundaries[$i]->{name};
-                push @names, $name
-                  if ( !( grep { $_ eq $name } @names ) && ( $name ne "" ) );
+                my $boundaryName = $Boundaries[$i]->{name};
+                push @names, $boundaryName
+                  if (!( grep { $_ eq $boundaryName } @names )
+                    && ( $boundaryName ne "" ) );
             }
             my $BoundariesList =
               @names ? "multiple-strict," . join( ",", @names ) : "textField";
@@ -388,8 +389,12 @@ sub Set {
         }
     }
 
-    my $cmd = '';
-    my $result;
+    my @preferences = qw(
+      robotSounds
+      dirtbinAlertReminderInterval
+      filterChangeReminderInterval
+      brushChangeReminderInterval
+    );
 
     # house cleaning
     if ( $a[1] eq "startCleaning" ) {
@@ -614,10 +619,7 @@ sub Set {
     }
 
     # preferences
-    elsif ( $a[1] =~
-/^(robotSounds|dirtbinAlertReminderInterval|filterChangeReminderInterval|brushChangeReminderInterval)$/x
-      )
-    {
+    elsif ( grep { $a[1] =~ /$_/x } @preferences ) {
         my $item = $1;
         my %params;
 
@@ -642,7 +644,8 @@ sub Set {
 
         $params{$item} = $a[2];
         $params{$item} *= 43200
-          if ( $item =~ /ChangeReminderInterval/ && $params{$item} =~ /^\d*$/x );
+          if ( $item =~ /ChangeReminderInterval/
+            && $params{$item} =~ /^\d*$/x );
         $params{$item} = SetBoolean( $params{$item} )
           if ( $item eq "robotSounds" );
 
@@ -1022,7 +1025,7 @@ sub ReceiveCommand {
     my $return;
     my $reqId           = 0;
     my $closeConnection = ( defined($respHeader)
-          && $respHeader =~ m/.*[Cc]onnection: keep-alive.*/ ? 0 : 1 );
+          && $respHeader =~ /connection:\skeep-alive/ix ? 0 : 1 );
 
     Log3( $name, 5, "BOTVAC $name: called function ReceiveCommand() rc: $rc" );
     Log3( $name, 5, "BOTVAC $name: header: $respHeader" )
@@ -1397,15 +1400,22 @@ sub ReceiveCommand {
                     if ( $cmd eq "getPreferences" ) {
                         if ( ref( $return->{data} ) eq "HASH" ) {
                             my $data = $return->{data};
+                            my @keys = qw(
+                              robotSounds
+                              dirtbinAlert
+                              allAlerts
+                              leds
+                              buttonClicks
+                              clock24h
+                            );
+
                             foreach my $key ( keys %{ $return->{data} } ) {
                                 my $value = $data->{$key};
                                 $value /= 43200
                                   if (  $key =~ /ChangeReminderInterval/
                                     and $value =~ /^[1-9]\d*$/x );
                                 $value = GetBoolean($value)
-                                  if ( $key =~
-/(robotSounds)|(dirtbinAlert)|(allAlerts)|(leds)|(buttonClicks)|(clock24h)/x
-                                  );
+                                  if ( grep { $key =~ /$_/x } @keys );
                                 readingsBulkUpdateIfChanged( $hash,
                                     "pref_$key", $value );
                             }
@@ -2402,7 +2412,7 @@ sub wsCheckHandshake {
     foreach my $line ( split( "\r\n", $response ) ) {
         my ( $key, $value ) = split( ": ", $line );
         next if ( !$value );
-        $value =~ s/^ //;
+        $value =~ s/^\s//x;
         Log3( $name, 4, "BOTVAC(ws) $name: headertohash |$key|$value|" );
         $header{ lc($key) } = $value;
     }
@@ -2467,7 +2477,7 @@ sub wsRead {
               . sprintf( "%v02X", $buf ) );
         wsDecode( $hash, $buf );
     }
-    elsif ( $buf =~ /HTTP\/1.1 101 Switching Protocols/ ) {
+    elsif ( $buf =~ /HTTP\/1.1\s101\sSwitching\sProtocols/x ) {
         Log3( $name, 4,
 "BOTVAC(ws) $name: received HTTP data string, start response processing:\n$buf"
         );
