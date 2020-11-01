@@ -95,6 +95,8 @@ my %opcode = (    # Opcode interpretation of the ws "Payload data
     'pong'         => 0x0A
 );
 
+my $clientId = '298e186d502fb6007b969f2f21b590ef32e4de1b2c665851';
+
 ###################################
 sub Initialize {
     my ($hash) = @_;
@@ -251,9 +253,28 @@ sub Get {
             return "maps for $what are not available yet";
         }
     }
+    elsif ( $what =~ /^(securityTokens)$/x ) {
+        my $rowCount = 1;
+        my $return = '<html><table class="block wide">';
+        foreach my $token ( '.accessToken', '.secretKey', '.idToken', '.authToken' ) {
+            my $value = ReadingsVal($name, $token, '');
+            if ( $value ne '' ) {
+                $return .= '<tr class="column ';
+                $return .= ( $rowCount % 2 ? "odd" : "even" );
+                $return .= '"><td>';
+                $return .= substr($token, 1);
+                $return .= '</td><td>';
+                $return .= join ('<br>',  ( $value =~ /.{1,50}/gsxms ));
+                $return .= '</td></tr>';
+                $rowCount++;
+            }
+        }
+        $return .= '</table></html>';
+        return $return;
+    }
     else {
         return
-"Unknown argument $what, choose one of batteryPercent:noArg statistics:noArg";
+"Unknown argument $what, choose one of batteryPercent:noArg statistics:noArg securityTokens:noArg";
     }
 }
 
@@ -276,6 +297,8 @@ sub Set {
     my $usage = "Unknown argument " . $a[1] . ", choose one of";
 
     $usage .= " password";
+    $usage .= " requestVerification:noArg sendVerification getProducts:noArg"
+        if ($hash->{VENDOR} eq 'vorwerk');
     if ( ReadingsVal( $name, ".start", "0" ) ) {
         $usage .= " startCleaning:";
         if ( $houseCleaningSrv eq "basic-4" ) {
@@ -608,6 +631,29 @@ sub Set {
         StorePassword( $hash, $a[2] );
     }
 
+    # requestVerification
+    elsif ( $a[1] eq 'requestVerification' ) {
+        Log3( $name, 2, "BOTVAC set $name " . $a[1] );
+
+        SendCommand( $hash, 'requestVerification' );
+    }
+
+    # sendVerification
+    elsif ( $a[1] eq 'sendVerification' ) {
+        Log3( $name, 2, "BOTVAC set $name $arg" );
+
+        return 'No verification code given' if ( !defined( $a[2] ) );
+
+        SendCommand( $hash, 'sendVerification', $a[2] );
+    }
+
+    # getProducts
+    elsif ( $a[1] eq 'getProducts' ) {
+        Log3( $name, 2, "BOTVAC set $name " . $a[1] );
+
+        SendCommand( $hash, 'getProducts' );
+    }
+
     # pollingMode
     elsif ( $a[1] eq "pollingMode" ) {
         Log3( $name, 4, "BOTVAC set $name $arg" );
@@ -765,13 +811,16 @@ sub SendCommand {
     my $URL       = "https://";
     my %sslArgs   = ();
     my %header;
+    my $method;
     my $data;
     my $response;
     my $return;
 
     Log3( $name, 5, "BOTVAC $name: called function SendCommand()" );
 
-    if ( $service ne "sessions" && $service ne "dashboard" ) {
+    if ( $service ne 'sessions' && $service ne 'dashboard' && 
+         $service !~ /.*Verification/xms &&
+         $service ne 'profileLogin' && $service ne 'getProducts' ) {
         return
           if (
             CheckRegistration( $hash, $service, $cmd, $option, @successor ) );
@@ -968,10 +1017,48 @@ sub SendCommand {
     elsif ( $service eq "loadmap" ) {
         $URL = $cmd;
     }
+    elsif ( $service eq 'requestVerification' ) {
+        $URL = 'https://mykobold.eu.auth0.com/passwordless/start';
+        $data  = '{';
+        $data .= '"client_id": "' . encode_base64(pack('H*', $clientId), '') . '",';
+        $data .= '"connection": "email",';
+        $data .= "\"email\": \"$email\",";
+        $data .= '"send": "code"';
+        $data .= '}';
+    }
+    elsif ( $service eq 'sendVerification' ) {
+        $URL = 'https://mykobold.eu.auth0.com/oauth/token';
+        $data  = '{';
+        $data .= '"audience": "https://mykobold.eu.auth0.com/userinfo",';
+        $data .= '"client_id": "' . encode_base64(pack('H*', $clientId), '') . '",';
+        $data .= '"country_code": "DE",';
+        $data .= '"grant_type": "http://auth0.com/oauth/grant-type/passwordless/otp",';
+        $data .= '"locale": "de",';
+        $data .= "\"otp\": \"$cmd\",";
+        $data .= '"platform": "ios",';
+        $data .= '"prompt": "login",';
+        $data .= '"realm": "email",';
+        $data .= '"scope": "openid email profile read:current_user",';
+        $data .= '"source": "vorwerk_auth0",';
+        $data .= "\"username\": \"$email\"";
+        $data .= '}';
+    }
+    elsif ( $service eq 'profileLogin' ) {
+        $method = 'POST';
+        $URL = 'https://api-2-prod.companion.kobold.vorwerk.com/api/v1/profile/login';
+        $header{Authorization} = 'Bearer ' . ReadingsVal($name, '.idToken', '');
+        delete( $header{Accept} );
+    }
+    elsif ( $service eq 'getProducts' ) {
+        $URL = 'https://api-2-prod.companion.kobold.vorwerk.com/api/v1/profile/products';
+        $header{Authorization} = ReadingsVal($name, '.authToken', '');
+        $header{'Accept-Language'} = 'de_DE';
+        delete( $header{Accept} );
+    }
 
     # send request via HTTP-POST method
     Log3( $name, 5, "BOTVAC $name: POST $URL (" . ::urlDecode($data) . ")" )
-      if ( defined($data) );
+      if ( defined($data) || defined($method) && $method eq 'POST' );
     Log3( $name, 5, "BOTVAC $name: GET $URL" )
       if ( !defined($data) );
     Log3( $name, 5,
@@ -985,6 +1072,7 @@ sub SendCommand {
         noshutdown => 1,
         keepalive  => $keepalive,
         header     => \%header,
+        method     => $method,
         data       => $data,
         hash       => $hash,
         service    => $service,
@@ -1654,6 +1742,38 @@ sub ReceiveCommand {
         # loadmap
         elsif ( $service eq "loadmap" ) {
             readingsBulkUpdate( $hash, ".map_cache", $data );
+        }
+
+        # requestVerification
+        elsif ( $service eq 'requestVerification' ) {
+            # nothing to do
+        }
+
+        # sendVerification
+        elsif ( $service eq 'sendVerification' ) {
+            if ( ref($return) eq 'HASH' ) {
+                readingsBulkUpdateIfChanged( $hash, '.accessToken',
+                    $return->{access_token} )
+                        if ( defined( $return->{access_token} ) );
+                if ( defined( $return->{id_token} ) ) {
+                    readingsBulkUpdateIfChanged( $hash, '.idToken',
+                        $return->{id_token} );
+                    push( @successor, [ 'profileLogin' ] );
+                }
+            }
+        }
+
+        # profileLogin
+        elsif ( $service eq 'profileLogin' ) {
+            if ( $respHeader =~ /Authorization:\s(Bearer\s[^\s]*)/xms ) {
+                readingsBulkUpdateIfChanged( $hash, '.authToken', $1 );
+                push( @successor, [ 'getProducts' ] );
+            }
+        }
+
+        # getProdcts
+        elsif ( $service eq 'getProducts' ) {
+            # TODO
         }
 
         # all other command results
