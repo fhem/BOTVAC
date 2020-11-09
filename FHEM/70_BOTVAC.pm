@@ -205,7 +205,14 @@ sub GetStatus {
         my $secs = ( $time[2] * 3600 ) + ( $time[1] * 60 ) + $time[0];
 
         # update once per day
-        push( @successor, [ "dashboard", undef ] ) if ( $secs <= $interval );
+        if ( $secs <= $interval ) {
+            if (ReadingsVal($name, '.idToken', '') eq '') {
+                push( @successor, [ 'dashboard', undef ] );
+            }
+            else {
+                push( @successor, [ 'dashboard2', undef ] );
+            }
+        }
 
         push( @successor, [ "messages", "getSchedule" ] );
         push( @successor, [ "messages", "getGeneralInfo" ] )
@@ -297,7 +304,7 @@ sub Set {
     my $usage = "Unknown argument " . $a[1] . ", choose one of";
 
     $usage .= " password";
-    $usage .= " requestVerification:noArg sendVerification getProducts:noArg"
+    $usage .= " requestVerification:noArg sendVerification"
         if ($hash->{VENDOR} eq 'vorwerk');
     if ( ReadingsVal( $name, ".start", "0" ) ) {
         $usage .= " startCleaning:";
@@ -519,7 +526,12 @@ sub Set {
     elsif ( $a[1] eq "syncRobots" ) {
         Log3( $name, 2, "BOTVAC set $name $arg" );
 
-        SendCommand( $hash, "dashboard" );
+        if (ReadingsVal($name, '.idToken', '') eq '') {
+            SendCommand( $hash, "dashboard" );
+        }
+        else {
+            SendCommand( $hash, "dashboard2" );
+        }
     }
 
     # statusRequest
@@ -803,7 +815,7 @@ sub SendCommand {
     my ( $hash, $service, $cmd, $option, @successor ) = @_;
     my $name      = $hash->{NAME};
     my $email     = $hash->{EMAIL};
-    my $password  = ReadPassword($hash);
+    my $password  = ReadingsVal($name, '.idToken', '') eq '' ? ReadPassword($hash) : '';
     my $timestamp = gettimeofday();
     my $timeout   = 180;
     my $keepalive = 0;
@@ -818,9 +830,17 @@ sub SendCommand {
 
     Log3( $name, 5, "BOTVAC $name: called function SendCommand()" );
 
-    if ( $service ne 'sessions' && $service ne 'dashboard' && 
-         $service !~ /.*Verification/xms &&
-         $service ne 'profileLogin' && $service ne 'getProducts' ) {
+    my @registrationServices = qw(
+        sessions
+        dashboard.*
+        firmwares
+        .*Verification
+        profileLogin
+        getProducts
+    );
+    my $re = join( '|', @registrationServices );
+    $re = qr/($re)/xms;
+    if ( $service !~ /$re/xms ) {
         return
           if (
             CheckRegistration( $hash, $service, $cmd, $option, @successor ) );
@@ -860,7 +880,7 @@ sub SendCommand {
             return;
         }
         my $token = createUniqueId() . createUniqueId();
-        $URL .= GetBeehiveHost( $hash->{VENDOR} );
+        $URL .= GetBeehiveHost($hash);
         $URL .= "/sessions";
         $data =
 "{\"platform\": \"ios\", \"email\": \"$email\", \"token\": \"$token\", \"password\": \"$password\"}";
@@ -869,19 +889,35 @@ sub SendCommand {
     elsif ( $service eq "dashboard" ) {
         $header{Authorization} =
           "Token token=" . ReadingsVal( $name, ".accessToken", "" );
-        $URL .= GetBeehiveHost( $hash->{VENDOR} );
+        $URL .= GetBeehiveHost($hash);
         $URL .= "/dashboard";
 
     }
+    elsif ( $service eq 'dashboard2' ) {
+        $header{Authorization} =
+          'Auth0Bearer ' . ReadingsVal( $name, '.idToken', '' );
+        $URL .= GetBeehiveHost($hash);
+        $URL .= '/users/me/robots';
+
+    }
+    elsif ( $service eq 'firmwares' ) {
+        $header{Authorization} =
+          'Auth0Bearer ' . ReadingsVal( $name, '.idToken', '' );
+        $URL .= GetBeehiveHost($hash);
+        $URL .= '/firmwares/recent';
+
+    }
     elsif ( $service eq "robots" ) {
-        my $serial = ReadingsVal( $name, "serial", "" );
+        my $serial = ReadingsVal( $name, 'serial', '' );
         return if ( $serial eq "" );
 
-        $header{Authorization} =
-          "Token token=" . ReadingsVal( $name, ".accessToken", "" );
-        $URL .= GetBeehiveHost( $hash->{VENDOR} );
+        my $idToken = ReadingsVal( $name, '.idToken', '' );
+        $header{Authorization} = $idToken eq '' ?
+            'Token token=' . ReadingsVal( $name, '.accessToken', '' ):
+            "Auth0Bearer $idToken";
+        $URL .= GetBeehiveHost($hash);
         $URL .= "/users/me/robots/$serial/";
-        $URL .= ( defined($cmd) ? $cmd : "maps" );
+        $URL .= ( defined($cmd) ? $cmd : 'maps' );
 
     }
     elsif ( $service eq "messages" ) {
@@ -1058,7 +1094,9 @@ sub SendCommand {
 
     # send request via HTTP-POST method
     Log3( $name, 5, "BOTVAC $name: POST $URL (" . ::urlDecode($data) . ")" )
-      if ( defined($data) || defined($method) && $method eq 'POST' );
+      if ( defined($data) );
+    Log3( $name, 5, "BOTVAC $name: POST $URL" )
+      if ( defined($method) && $method eq 'POST' );
     Log3( $name, 5, "BOTVAC $name: GET $URL" )
       if ( !defined($data) );
     Log3( $name, 5,
@@ -1181,7 +1219,7 @@ sub ReceiveCommand {
                 readingsDelete( $hash, ".accessToken" );
                 readingsEndUpdate( $hash, 1 );
 
-                if ( $service ne "sessions" ) {
+                if ( $service ne "sessions" && ReadingsVal($name, '.idToken', '') eq '') {
 
                     # put last command back into queue
                     unshift( @successor, [ $service, $cmd ] );
@@ -1635,6 +1673,51 @@ sub ReceiveCommand {
             }
         }
 
+        #dashboard vorwerk
+        elsif ( $service eq 'dashboard2' ) {
+            if ( ref($return) eq 'ARRAY' ) {
+                my @robotList = ();
+                my @robots    = @{$return};
+                for ( my $i = 0 ; $i < @robots ; $i++ ) {
+                    my $r = {
+                        'name'      => $robots[$i]->{name},
+                        'model'     => $robots[$i]->{model},
+                        'serial'    => $robots[$i]->{serial},
+                        'secretKey' => $robots[$i]->{secret_key},
+                        'macAddr'   => $robots[$i]->{mac_address},
+                        'nucleoUrl' => $robots[$i]->{nucleo_url}
+                    };
+                    push( @robotList, $r );
+                }
+                $hash->{helper}{ROBOTS} = \@robotList;
+                if (@robotList) {
+                    # follow registration procedure first
+                    unshift( @successor, [ 'firmwares' ] );
+                }
+                else {
+                    Log3( $name, 3, "BOTVAC $name: no robots found" );
+                    Log3( $name, 4, "BOTVAC $name: drop successors" );
+                    LogSuccessors( $hash, @successor );
+                    @successor = ();
+                }
+            }
+        }
+
+        #firmwares
+        elsif ( $service eq 'firmwares' ) {
+            if ( ref($return) eq 'HASH' ) {
+                my @robotList = @{ $hash->{helper}{ROBOTS} };
+                foreach my $r ( @robotList ) {
+                    my $firmware = $return->{ $r->{model} };
+                    $r->{recentFirmware} = $firmware->{version} if defined($firmware);
+                }
+                if (@robotList) {
+                    SetRobot( $hash, ReadingsNum( $name, 'robot', 0 ) );
+                    push( @successor, [ 'robots', 'maps' ] );
+                }
+            }
+        }
+
         # robots
         elsif ( $service eq "robots" ) {
             if ( $cmd eq "maps" ) {
@@ -1767,13 +1850,18 @@ sub ReceiveCommand {
         elsif ( $service eq 'profileLogin' ) {
             if ( $respHeader =~ /Authorization:\s(Bearer\s[^\s]*)/xms ) {
                 readingsBulkUpdateIfChanged( $hash, '.authToken', $1 );
-                push( @successor, [ 'getProducts' ] );
+                # follow registration procedure first
+                unshift( @successor, [ 'getProducts' ] );
             }
         }
 
         # getProdcts
         elsif ( $service eq 'getProducts' ) {
-            # TODO
+            if ( ref($return) eq 'ARRAY' ) {
+                # take data from dashboard
+                # follow registration procedure first
+                unshift( @successor, [ 'dashboard2' ] );
+            }
         }
 
         # all other command results
@@ -1974,17 +2062,25 @@ sub CheckRegistration {
     my ( $hash, $service, $cmd, $option, @successor ) = @_;
     my $name = $hash->{NAME};
 
-    if ( ReadingsVal( $name, ".secretKey", "" ) eq "" ) {
+    if ( ReadingsVal( $name, '.secretKey', '' ) eq '' ) {
         my @nextCmd = ( $service, $cmd, $option );
         unshift( @successor, [ $service, $cmd, $option ] );
 
         Log3( $name, 4, "BOTVAC $name: register account" );
         LogSuccessors( $hash, @successor );
 
-        SendCommand( $hash, "sessions", undef, undef, @successor )
-          if ( ReadingsVal( $name, ".accessToken", "" ) eq "" );
-        SendCommand( $hash, "dashboard", undef, undef, @successor )
-          if ( ReadingsVal( $name, ".accessToken", "" ) ne "" );
+        if ( ReadingsVal( $name, '.idToken', '' ) eq '' ) {
+            SendCommand( $hash, 'sessions', undef, undef, @successor )
+            if ( ReadingsVal( $name, '.accessToken', '' ) eq '' );
+            SendCommand( $hash, 'dashboard', undef, undef, @successor )
+            if ( ReadingsVal( $name, '.accessToken', '' ) ne '' );
+        }
+        else {
+            SendCommand( $hash, 'profileLogin', undef, undef, @successor )
+            if ( ReadingsVal( $name, '.authToken', '' ) eq '' );
+            SendCommand( $hash, 'dashboard2', undef, undef, @successor )
+            if ( ReadingsVal( $name, '.authToken', '' ) ne '' );
+        }
 
         return 1;
     }
@@ -2208,10 +2304,15 @@ sub GetAuthStatusText {
 }
 
 sub GetBeehiveHost {
-    my ($vendor) = @_;
+    my ($hash) = @_;
+    my $name = $hash->{NAME};
+    my $vendor = $hash->{VENDOR};
     my $vendors = {
         'neato'   => 'beehive.neatocloud.com',
-        'vorwerk' => 'vorwerk-beehive-production.herokuapp.com',
+        'vorwerk' =>
+            ReadingsVal($name, '.idToken', '') eq '' ?
+                'vorwerk-beehive-production.herokuapp.com' :
+                'beehive.ksecosys.com',
     };
 
     if ( defined( $vendors->{$vendor} ) ) {
