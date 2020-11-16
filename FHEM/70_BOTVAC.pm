@@ -200,7 +200,7 @@ sub GetStatus {
         or ReadingsVal( $name, "pollingMode", 1 ) == 0 );
 
     # check device availability
-    if ( !$update ) {
+    if ( !$update && $::init_done) {
         my @time = localtime();
         my $secs = ( $time[2] * 3600 ) + ( $time[1] * 60 ) + $time[0];
 
