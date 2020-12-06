@@ -1,3 +1,8 @@
+2020-12-06 - Documentation of verification process
+2020-11-16 - avoid reading password while starting
+2020-11-09 - add myKobold logic
+2020-11-01 - add oauth2 workflow
+2020-09-20 - Merge branch 'master' into dev
 2020-09-20 - SVN upload
 2020-09-20 - fix set preferences
 2020-06-20 - Merge branch 'master' into dev
