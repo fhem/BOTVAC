@@ -18,12 +18,18 @@ This means, it can need some time until your Robot will react on your command.
 Example:
 `define myNeato BOTVAC myemail@myprovider.com NEATO 300`  
   
-After defining the Device, it's necessary to enter the password with
-`set <name> password <password>`  
-It is exactly the same Password as you use on the Website or inside the App.
+After defining the Device, it's necessary to log in into your account which is linked to your email address.
 
-Example:
-`set NEATO passwort mySecretPassword`  
+* If you have a password, enter it with
+`set <name> password <password>`  
+  It is exactly the same Password as you use on the Website or inside the App.
+
+  Example:
+  `set NEATO passwort mySecretPassword`
+
+* If authentication without a password is provided, you have to following the registration process.
+  1. Ask for an one-time password by `set <name> requestVerification`
+  1. Provide one-time password from email `set <name> sendVerification <code>`
 
 </ul>
 
@@ -31,6 +37,9 @@ Example:
 
 * <a name="batteryPercent"></a>`get <name> batteryPercent`  
   requests the state of the battery from Robot
+* <a name="securityTokens"></a>`get <name> securityTokens`  
+  list of all tokens stored by the module.
+  The tokens are relevant for user authentication and to get access to robot data.
 * <a name="statistics"></a>`get <name> statistics`  
   display statistical data, extracted from available maps of recent cleanings
 
@@ -64,10 +73,15 @@ Example:
   load last map from server into the cache of the module. no file is stored!
 * <a name="resume"></a>`set <name> resume`  
   resume cleaning after pause
-* <a name="schedule"></a>`set <name> schedule`
+* <a name="requestVerification"></a>`set <name> requestVerification`  
+  Request one-time password for account verfication.  
+  One-time password will be sent to the account's email address.
+* <a name="schedule"></a>`set <name> schedule`  
   on and off, switch time control
 * <a name="sendToBase"></a>`set <name> sendToBase`  
   send roboter back to base
+* <a name="sendVerification"></a>`set <name> sendVerification <code>`  
+  Use one-time password from email as code to log in into your account, see [requestVerification](#requestVerification).
 * <a name="setBoundariesOnFloorplan"></a>`set <name> setBoundariesOnFloorplan_<floor plan> <name|{JSON String}>`  
   Set boundaries/nogo lines in the corresponding floor plan.
   The paramter can either be a name, which is already defined by attribute "boundaries", or alternatively a JSON string. (A comma-separated list of names is also possible.)  

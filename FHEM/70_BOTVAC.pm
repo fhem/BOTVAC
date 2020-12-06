@@ -2889,15 +2889,25 @@ For issuing commands or retrieving Readings it's necessary to fetch the informat
 
 <p><code>define &lt;name&gt; BOTVAC &lt;email&gt; [NEATO|VORWERK] [&lt;polling-interval&gt;]</code></p>
 <p>Example: <code>define myNeato BOTVAC myemail@myprovider.com NEATO 300</code></p>
-<p>After defining the Device, it's necessary to enter the password with <code>set &lt;name&gt; password &lt;password&gt;</code><br />
+<p>After defining the Device, it's necessary to log in into your account which is linked to your email address.</p>
+<ul>
+<li><p>If you have a password, enter it with <code>set &lt;name&gt; password &lt;password&gt;</code><br />
 It is exactly the same Password as you use on the Website or inside the App.</p>
-<p>Example: <code>set NEATO passwort mySecretPassword</code></p>
+<p>Example: <code>set NEATO passwort mySecretPassword</code></p></li>
+<li><p>If authentication without a password is provided, you have to following the registration process.</p>
+<ol type="1">
+<li>Ask for an one-time password by <code>set &lt;name&gt; requestVerification</code></li>
+<li>Provide one-time password from email <code>set &lt;name&gt; sendVerification &lt;code&gt;</code></li>
+</ol></li>
+</ul>
 </ul>
 
 <p><strong><a name="BOTVACget"></a>Get</strong></p>
 <ul>
 <li><a name="batteryPercent"></a><code>get &lt;name&gt; batteryPercent</code><br />
 requests the state of the battery from Robot</li>
+<li><a name="securityTokens"></a><code>get &lt;name&gt; securityTokens</code><br />
+list of all tokens stored by the module. The tokens are relevant for user authentication and to get access to robot data.</li>
 <li><a name="statistics"></a><code>get &lt;name&gt; statistics</code><br />
 display statistical data, extracted from available maps of recent cleanings</li>
 </ul>
@@ -2929,9 +2939,15 @@ stops cleaning and returns to base</li>
 load last map from server into the cache of the module. no file is stored!</li>
 <li><a name="resume"></a><code>set &lt;name&gt; resume</code><br />
 resume cleaning after pause</li>
-<li><a name="schedule"></a><code>set &lt;name&gt; schedule</code> on and off, switch time control</li>
+<li><a name="requestVerification"></a><code>set &lt;name&gt; requestVerification</code><br />
+Request one-time password for account verfication.<br />
+One-time password will be sent to the account's email address.</li>
+<li><a name="schedule"></a><code>set &lt;name&gt; schedule</code><br />
+on and off, switch time control</li>
 <li><a name="sendToBase"></a><code>set &lt;name&gt; sendToBase</code><br />
 send roboter back to base</li>
+<li><a name="sendVerification"></a><code>set &lt;name&gt; sendVerification &lt;code&gt;</code><br />
+Use one-time password from email as code to log in into your account, see <a href="#requestVerification">requestVerification</a>.</li>
 <li><a name="setBoundariesOnFloorplan"></a><code>set &lt;name&gt; setBoundariesOnFloorplan_&lt;floor plan&gt; &lt;name|{JSON String}&gt;</code><br />
 Set boundaries/nogo lines in the corresponding floor plan. The paramter can either be a name, which is already defined by attribute "boundaries", or alternatively a JSON string. (A comma-separated list of names is also possible.)<br />
 <a href="https://developers.neatorobotics.com/api/robot-remote-protocol/maps">Description of syntax</a><br />
