@@ -1,4 +1,4 @@
-# $Id: 70_BOTVAC.pm 22802 2020-09-20 15:33:59Z vuffiraa $
+# $Id: 70_BOTVAC.pm 23304 2020-12-06 17:06:09Z vuffiraa $
 ##############################################################################
 #
 #     70_BOTVAC.pm
@@ -2879,7 +2879,7 @@ sub wsMasking {
 =begin html
 
 <p><a name="BOTVAC"></a></p>
-<h3 id="botvac">BOTVAC</h3>
+<h3>BOTVAC</h3>
 <ul>
 
 <p>This module controls Neato Botvac Connected and Vorwerk Robot Vacuums.<br />
