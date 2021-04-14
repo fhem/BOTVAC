@@ -1,31 +1,43 @@
-2021-02-18 - Merge branch 'master' into dev
-2021-02-18 - SVN upload
 2021-02-18 - anker point style <module><get|set|attr>
-2020-12-06 - Merge branch 'master' into dev
-2020-12-06 - SVN upload
 2020-12-06 - Documentation of verification process
+2020-12-06 - Source of documentation using markdown
 2020-11-16 - avoid reading password while starting
 2020-11-09 - add myKobold logic
 2020-11-01 - add oauth2 workflow
-2020-09-20 - Merge branch 'master' into dev
-2020-09-20 - SVN upload
 2020-09-20 - fix set preferences
-2020-06-20 - Merge branch 'master' into dev
-2020-06-20 - SVN upload
 2020-05-25 - optimize regex
-2020-04-30 - SVN upload
-
-- optimize error message handling
-- renew accessToken if necessary
-- PBP issues
-2020-04-30 - Merge branch 'dev'
+2020-05-03 - PBP extend regex with /x
+2020-05-03 - Code formatting by perltidy
+2020-05-01 - tolerable read of schedule data
 2020-04-26 - Optimze error message handling
 2020-04-26 - Renew accessToken if necessary
 2020-04-10 - PBP other issues
-2020-03-22 - Merge branch 'master' into dev
-2020-03-22 - SVN upload
-
-- initial sslArgs hash
-- initial response header
-- initial response error and data
+2020-04-05 - use CommandAttr
+2020-04-05 - export Initialize function
+2020-04-04 - PBP: map expression form
+2020-04-04 - PBP: Mixed high and low-precedence booleans
+2020-04-04 - PBP: end with "return"
+2020-04-04 - PBP: "require" statement with library name as string
+2020-04-04 - PBP: Expression form of "eval"
+2020-04-04 - PBP: "return" statement with explicit "undef"
+2020-04-04 - PBP: Subroutine prototypes
 2020-03-22 - setup github workflow
+2020-03-22 - fix uninitialized values while logging
+2020-03-22 - fix initial response header
+2020-03-22 - fix initial hash
+2020-03-20 - initialize variables while loading maps
+2020-03-10 - add sslVerify function
+2020-03-08 - Simple connection handling
+2020-02-24 - Update controls_BOTVAC.txt
+2020-02-24 - invert keepalive calculation
+2020-02-15 - use same connection during interval update
+2020-02-02 - add log of received http header
+2020-02-02 - refactore sslargs hash
+2020-02-01 - add keepalive
+2020-02-01 - http header as hash
+2019-12-30 - Upload latest version from SVN
+2019-12-30 - Create LICENSE
+2019-12-20 - Create README.md
+2019-12-20 - Rename BOTVAC/70_BOTVAC.pm to BOTVAC/FHEM/70_BOTVAC.pm
+2019-12-20 - Rename 70_BOTVAC_cmdref.pm to BOTVAC/70_BOTVAC_cmdref.pm
+2019-12-20 - Rename 70_BOTVAC.pm to BOTVAC/70_BOTVAC.pm
